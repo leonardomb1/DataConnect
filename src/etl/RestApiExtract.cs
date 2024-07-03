@@ -5,8 +5,8 @@ namespace DataConnect.Etl;
 public class HttpExtract
 {
     public static async Task PaginatedApiExtract(Func<dynamic> extractMethod,
-                                                          Func<JsonArray, int> publishMethod,
-                                                          string pageAtrName)
+                                                 Func<JsonArray, int> publishMethod,
+                                                 string pageAtrName)
     {
         dynamic firstResult = Task.Run(async () => await extractMethod());
 
