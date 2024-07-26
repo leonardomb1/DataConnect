@@ -1,13 +1,12 @@
 namespace DataConnect.Shared;
 
-public class Log
+public static class Log
 {
-    private readonly string _logPrefix = $"[{DateTime.Now}]:: ";
-
-    public void Out(string message,
+    public static void Out(string message,
                     [System.Runtime.CompilerServices.CallerMemberName] string? callerMethod = null)
     {
-        var log = _logPrefix + $"[{callerMethod}] > " + message;
+        string _logPrefix = $"[{DateTime.Now}]::";
+        string log = _logPrefix + $"[{callerMethod}] > " + message;
         Console.WriteLine(log);
     }
 }
