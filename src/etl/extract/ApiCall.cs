@@ -1,14 +1,16 @@
+using System.Data;
 using System.Text.Json.Nodes;
+using DataConnect.Shared.Converter;
 
-namespace DataConnect.Etl;
+namespace DataConnect.Etl.Extract;
 
-public class HttpExtract
+public static class ApiCall
 {
     public static async Task PaginatedApiExtract(Func<dynamic> extractMethod,
                                                  Func<JsonArray, int> publishMethod,
                                                  string pageAtrName)
     {
-        dynamic firstResult = Task.Run(async () => await extractMethod());
+        dynamic firstResult = await extractMethod();
 
         int pageCount = firstResult;
 
@@ -21,7 +23,7 @@ public class HttpExtract
             for(int j = 0; j < Environment.ProcessorCount; j++)
             {
                 tasks.Add(Task.Run(async () => {
-                    result += await extractMethod();
+                    result.Add(await extractMethod());
                 }));
             }
             await Task.WhenAll(tasks);
@@ -31,8 +33,17 @@ public class HttpExtract
 
             result.Clear();
 
-            Console.WriteLine(i + 1);
             await Task.Delay(500);
         }
+    }
+
+    public static async Task SimpleApiExtract(Func<dynamic> extractMethod,
+                                              Func<DataTable, string, int> publishMethod)
+    {
+        dynamic result = await extractMethod();
+
+        DataTable table = DynamicObjConvert.FromJsonToDataTable(result);
+                
+        await Task.Run(() => publishMethod(table, ""));
     }
 }
