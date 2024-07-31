@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DataConnect.Shared;
 using DataConnect.Etl.Sql;
+using DataConnect.Models;
 using DataConnect.Shared.Converter;
 using WatsonWebserver.Core;
 using WatsonWebserver.Lite;
@@ -83,21 +84,11 @@ public class Route(int port, string conStr) : IDisposable
         ]);
 
         DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(ret, "itens");
+        BodyDefault obj = JsonSerializer.Deserialize<BodyDefault>(ctx.Request.DataAsString)!;
 
-        foreach (DataRow row in table.Rows)
-        {
-            foreach (DataColumn column in table.Columns)
-            {
-                Console.Write($"{row[column]}\t");
-            }
-            Console.WriteLine();
-        }
-
-        // using var sql = new SqlServerCall(conStr);
-
-        // BodyDefault obj = JsonSerializer.Deserialize<BodyDefault>(ctx.Request.DataAsString)!;
-
-        // await sql.BulkInsert(ret, obj.DestinationTableName);
+        using var sql = new SqlServerCall(conStr);
+        await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");
+        await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, "DWExtract");
     }
 
     public void Dispose()

@@ -24,7 +24,7 @@ public class HttpSender(string requestUri,
     }
 
     private static HttpRequestMessage AddRequestContent(HttpRequestMessage request,
-                                                 KeyValuePair<string, string>[] content)
+                                                 List<KeyValuePair<string, string>> content)
     {
         ArgumentNullException.ThrowIfNull(content);     
 
@@ -46,7 +46,7 @@ public class HttpSender(string requestUri,
 
     public async Task<dynamic> SimpleAuthBodyRequestAsync(KeyValuePair<string, string> user,
                                          KeyValuePair<string, string> password,
-                                         KeyValuePair<string, string>[] content)
+                                         List<KeyValuePair<string, string>> content)
     {
         var request = AddRequestContent(HttpSimpleAuth(user, password), content);
         return await GetRequestAsync(request);

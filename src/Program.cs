@@ -5,15 +5,15 @@ namespace DataConnect;
 public class Program
 {
     private int _packetSize;
-    private string _connection;
-    private int _port;
+    private readonly string _connection;
+    private readonly int _port;
     public Program()
     {
         var configVariables = new Dictionary<string, string>
         {
             { "PACKET_SIZE", Environment.GetEnvironmentVariable("PACKET_SIZE")?? "n/a" },
             { "PORT_TO_USE", Environment.GetEnvironmentVariable("PORT_TO_USE")?? "n/a" },
-            { "DW_CONSTR", Environment.GetEnvironmentVariable("DW_CONSTR")?? "n/a" }
+            { "DW_CONNECTIONSTRING", Environment.GetEnvironmentVariable("DW_CONNECTIONSTRING")?? "n/a" }
         };
 
         var anyConfigNotSet = configVariables.Any(variable => variable.Value == "n/a");
@@ -25,7 +25,7 @@ public class Program
 
         _packetSize = int.Parse(configVariables["PACKET_SIZE"]);
         _port = int.Parse(configVariables["PORT_TO_USE"]);
-        _connection = configVariables["DW_CONSTR"];
+        _connection = configVariables["DW_CONNECTIONSTRING"];
     }
 
     public void Run()
