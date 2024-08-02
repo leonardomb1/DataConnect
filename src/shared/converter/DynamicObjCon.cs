@@ -26,11 +26,17 @@ public static class DynamicObjConvert
             foreach (var element in node!.AsObject())
             {
                 var value = element.Value ?? JsonNode.Parse($"\"\"");
+                if (!table.Columns.Contains(element.Key))
+                {
+                    table.Columns.Add(element.Key);
+                }
+
                 if (value!.GetValueKind() != JsonValueKind.Array && value!.GetValueKind() != JsonValueKind.Object)
                 {
                     lin[element.Key] = value.GetValue<dynamic>();
+                } else {
+                    lin[element.Key] = value.ToJsonString();
                 }
-                lin[element.Key] = value.ToJsonString();
             }
         }
         

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using DataConnect.Etl.Http;
 using DataConnect.Shared;
+using DataConnect.Validator;
 using DataConnect.Models;
 using WatsonWebserver.Core;
 using System.Reflection;
@@ -15,7 +16,7 @@ public static class RestTemplate
 
         try
         {
-            if (!JsonValidate.IsValid(ctx.Request.DataAsString)) throw new Exception();
+            if (!RequestValidate.IsValidDeserialized(ctx.Request.DataAsString)) throw new Exception();
             try
             {
                 var req = JsonSerializer.Deserialize<BodyDefault>(ctx.Request.DataAsString);

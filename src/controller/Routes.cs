@@ -17,7 +17,7 @@ public class Route(int port, string conStr) : IDisposable
     private readonly string _connection = conStr;
     private readonly WebserverLite _server = new HostBuilder("*", port, false, NotFound)
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes)
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/ponto_assinatura", (HttpContextBase ctx) => PostExecuteAssinaturaPonto(ctx, conStr))
+            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/simple_auth", (HttpContextBase ctx) => SimpleAuthJobRoute(ctx, conStr))
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", GetRoutes)
             .Build();
 
@@ -63,13 +63,14 @@ public class Route(int port, string conStr) : IDisposable
         await ctx.Response.Send(res);
     }
 
-    private static async Task PostExecuteAssinaturaPonto(HttpContextBase ctx, string conStr) 
+    private static async Task SimpleAuthJobRoute(HttpContextBase ctx, string conStr) 
     {
         Log.Out($"Receiving {ctx.Request.Method} request for {ctx.Route} by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");
+        
 
         var list = new List<KeyValuePair<string, string>>
         {
-            KeyValuePair.Create("pag", "ponto_espelho"),
+            KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
             KeyValuePair.Create("cmd", "get"),
             KeyValuePair.Create("dtde", $"{DateTime.Today.AddDays(-4):dd/MM/yyyy}"),
             KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
@@ -79,12 +80,11 @@ public class Route(int port, string conStr) : IDisposable
 
         dynamic ret = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
             KeyValuePair.Create("user", "integracao"),
-            KeyValuePair.Create("token", Encryption.Sha256($"TWm3CAdbUxZq{DateTime.Today:dd/MM/yyyy}")),
+            KeyValuePair.Create("token", Encryption.Sha256($"{obj.Options[0]}{DateTime.Today:dd/MM/yyyy}")),
             list
         ]);
 
         DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(ret, "itens");
-        BodyDefault obj = JsonSerializer.Deserialize<BodyDefault>(ctx.Request.DataAsString)!;
 
         using var sql = new SqlServerCall(conStr);
         await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");

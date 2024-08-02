@@ -40,21 +40,21 @@ public class SqlServerCall(string conStr) : IDisposable
     {
         if (!IsCreated(tableName, database))
         {
-            Log.Out($"Failed to find table {sysName}.{tableName}, proceeding with creation...");
+            Log.Out($"Failed to find table {sysName.ToUpper()}.{tableName.ToUpper()}, proceeding with creation...");
             using SqlCommand command = new("", _connection);
 
-            string createTableQuery = $"CREATE TABLE {sysName}.{tableName} (";
+            string createTableQuery = $"CREATE TABLE {sysName.ToUpper()}.{tableName.ToUpper()} (";
 
             foreach (DataColumn column in table.Columns)
             {
                 createTableQuery += $"[{column.ColumnName}] NVARCHAR(MAX), ";
             }
-            createTableQuery += $"ID_DW_{tableName} INT IDENTITY(1,1) CONSTRAINT IX_{tableName}_SK PRIMARY KEY, ";
-            createTableQuery += $"DT_UPDATE_{tableName} DATETIME CONSTRAINT CK_UPDATE_{tableName} DEFAULT(GETDATE()));";
+            createTableQuery += $"ID_DW_{tableName.ToUpper()} INT IDENTITY(1,1) CONSTRAINT IX_{tableName.ToUpper()}_SK PRIMARY KEY, ";
+            createTableQuery += $"DT_UPDATE_{tableName.ToUpper()} DATETIME CONSTRAINT CK_UPDATE_{tableName.ToUpper()} DEFAULT(GETDATE()));";
             command.CommandText = createTableQuery;
             await command.ExecuteNonQueryAsync();
         } else {
-            Log.Out($"Table {tableName} already exists.");
+            Log.Out($"Table {tableName.ToUpper()} already exists.");
         }
         _connection.Close();
     }
@@ -68,7 +68,7 @@ public class SqlServerCall(string conStr) : IDisposable
         }        
 
         using SqlCommand cmd = new() {
-            CommandText = $"SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName}'",
+            CommandText = $"SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName.ToUpper()}'",
             Connection = _connection
         };
 

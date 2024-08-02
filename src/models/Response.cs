@@ -1,4 +1,4 @@
-namespace DataConnect.Controller;
+namespace DataConnect.Models;
 
 public class Response
 {
