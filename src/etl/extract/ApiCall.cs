@@ -4,7 +4,7 @@ using DataConnect.Shared.Converter;
 
 namespace DataConnect.Etl.Extract;
 
-public static class ApiCall
+public static class Aps
 {
     public static async Task PaginatedApiExtract(Func<dynamic> extractMethod,
                                                  Func<JsonArray, int> publishMethod,
