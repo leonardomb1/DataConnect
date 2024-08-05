@@ -24,11 +24,11 @@ public class SqlServerCall(string conStr) : IDisposable
         using SqlBulkCopy bulkCopy = new(_connection) 
         {
             BulkCopyTimeout = 1000,
-            DestinationTableName = $"{sysName}.{tableName}"
+            DestinationTableName = $"{sysName.ToUpper()}.{tableName.ToUpper()}"
         };
 
         await bulkCopy.WriteToServerAsync(table);
-        Log.Out($"API return has been written into the table: {sysName}.{tableName}");
+        Log.Out($"API return has been written into the table: {sysName.ToUpper()}.{tableName.ToUpper()}");
         _connection.Close();
         return ReturnedValues.MethodSuccess;
     }

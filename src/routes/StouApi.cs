@@ -1,0 +1,95 @@
+using DataConnect.Shared;
+using DataConnect.Shared.Converter;
+using DataConnect.Etl.Sql;
+using DataConnect.Controller;
+using WatsonWebserver.Core;
+using System.Data;
+using DataConnect.Types;
+using DataConnect.Models;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace DataConnect.Routes;
+
+public static class StouApi
+{
+    public static async Task<int> PostPontoEspelho(HttpContextBase ctx, string conStr) 
+    {
+        Result<BodyDefault, int> requestResult = await RestTemplate.RequestStart(ctx);
+        if (!requestResult.IsOk) return ReturnedValues.MethodFail;
+        
+        var obj = requestResult.Value;
+
+        var filteredDate =
+            obj.Options[4] == "Incremental" ?  
+            $"{DateTime.Today.AddDays(-4):dd/MM/yyyy}" :
+            $"{DateTime.Today.AddDays(-410):dd/MM/yyyy}";
+
+        var firstList = new List<KeyValuePair<string, string>>
+        {
+            KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
+            KeyValuePair.Create("cmd", "get"),
+            KeyValuePair.Create("dtde", $"{DateTime.Today.AddDays(-4):dd/MM/yyyy}"),
+            KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
+            KeyValuePair.Create("start", "1"),
+            KeyValuePair.Create("page", $"1"),
+        };
+
+        Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+            KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
+            KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
+            firstList
+        ]);
+        if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
+
+        JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
+        int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
+        DataTable table = new();
+
+        List<Task> tasks = [];
+
+        using var sql = new SqlServerCall(conStr);
+        
+        for (int i = 1; i < pageCount; i++)
+        {
+            for (int j = 0; j < Environment.ProcessorCount; j++)
+            {
+                tasks.Add(Task.Run<Result<dynamic, int>>(async () => {
+                        var list = new List<KeyValuePair<string, string>>
+                        {
+                            KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
+                            KeyValuePair.Create("cmd", "get"),
+                            KeyValuePair.Create("dtde", filteredDate),
+                            KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
+                            KeyValuePair.Create("start", "1"),
+                            KeyValuePair.Create("page", $"{j}"),
+                        };
+
+                        Result<dynamic, int> ret = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+                            KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
+                            KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
+                            list
+                        ]);
+                        
+                        return ret;
+                    }).ContinueWith(t => {
+                        if (t.Result.IsOk) {
+                            table.Merge(DynamicObjConvert.FromInnerJsonToDataTable(t.Result.Value, "itens"));
+                        } else {
+                            Log.Out($"Thread {t.Id}, has returned error");
+                        }
+                        t.Dispose();
+                }));
+                
+                await Task.WhenAll(tasks);
+            }
+            tasks.Clear();
+
+            await Task.Delay(500);
+            await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");
+            await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, "DWExtract");
+        }
+
+        return ReturnedValues.MethodSuccess;
+    }
+}
