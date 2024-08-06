@@ -13,7 +13,6 @@ public class Program
         {
             { "PACKET_SIZE", Environment.GetEnvironmentVariable("PACKET_SIZE")?? "n/a" },
             { "PORT_TO_USE", Environment.GetEnvironmentVariable("PORT_TO_USE")?? "n/a" },
-            { "ENCRYPT_KEY", Environment.GetEnvironmentVariable("ENCRYPT_KEY")?? "n/a" },
             { "DW_CONNECTIONSTRING", Environment.GetEnvironmentVariable("DW_CONNECTIONSTRING")?? "n/a" }
         };
 

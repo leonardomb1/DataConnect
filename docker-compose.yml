@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  runner:
+    build: .
+    ports:
+      - "10000:10000"
+    environment:
+      - DW_CONNECTIONSTRING=${DW_CONNECTIONSTRING}
+      - PORT_TO_USE=${PORT_TO_USE}
+      - PACKET_SIZE=${PACKET_SIZE}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    tty: true
+    stdin_open: true
