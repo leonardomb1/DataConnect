@@ -29,7 +29,7 @@ public static class StouApi
         {
             KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
             KeyValuePair.Create("cmd", "get"),
-            KeyValuePair.Create("dtde", $"{DateTime.Today.AddDays(-4):dd/MM/yyyy}"),
+            KeyValuePair.Create("dtde", $"{filteredDate}"),
             KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
             KeyValuePair.Create("start", "1"),
             KeyValuePair.Create("page", $"1"),
@@ -47,6 +47,7 @@ public static class StouApi
         DataTable table = new();
 
         List<Task> tasks = [];
+        var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
 
         using var sql = new SqlServerCall(conStr);
         
@@ -54,6 +55,8 @@ public static class StouApi
         {
             for (int j = 0; j < Environment.ProcessorCount; j++)
             {
+                await semaphore.WaitAsync();
+
                 tasks.Add(Task.Run<Result<dynamic, int>>(async () => {
                         var list = new List<KeyValuePair<string, string>>
                         {
@@ -65,7 +68,7 @@ public static class StouApi
                             KeyValuePair.Create("page", $"{j}"),
                         };
 
-                        Result<dynamic, int> ret = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+                        var ret = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
                             KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
                             KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
                             list
@@ -79,17 +82,22 @@ public static class StouApi
                             Log.Out($"Thread {t.Id}, has returned error");
                         }
                         t.Dispose();
-                }));
-                
-                await Task.WhenAll(tasks);
+                        semaphore.Release();
+                }));    
             }
+            await Task.WhenAll(tasks);
+
+            tasks.ForEach(x => x.Dispose());
             tasks.Clear();
+            
 
             await Task.Delay(500);
             await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");
             await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, "DWExtract");
+            table.Clear();
         }
 
+        table.Dispose();
         return ReturnedValues.MethodSuccess;
     }
 }
