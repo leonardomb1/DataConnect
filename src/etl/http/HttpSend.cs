@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using DataConnect.Shared;
+using DataConnect.Types;
 
 namespace DataConnect.Etl.Http;
 
@@ -34,27 +36,50 @@ public class HttpSender(string requestUri,
         return request; 
     }
 
-    private async Task<dynamic> GetRequestAsync(HttpRequestMessage request)
+    private async Task<Result<dynamic, int>> GetRequestAsync(HttpRequestMessage request)
     {
         var client = _httpClient;
+        int maxRetries = 5;
+        int delay = 1000;
 
-        using var response = await client.SendAsync(request);
-        var bodyObj = await response.Content.ReadFromJsonAsync<dynamic>();
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try
+            {
+                using var response = await client.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+                var bodyObj = await response.Content.ReadFromJsonAsync<dynamic>();
 
-        return bodyObj!;
+                return bodyObj!;             
+            }
+            catch (Exception ex) when (attempt < maxRetries - 1)
+            {
+                Log.Out($"Request did not succeed, trying again. Observed exception was : {ex.Message}");
+                await Task.Delay(delay);
+
+                delay *= 2;
+            }
+        }
+        return ReturnedValues.MethodFail;
     }
 
     public async Task<dynamic> SimpleAuthBodyRequestAsync(KeyValuePair<string, string> user,
                                          KeyValuePair<string, string> password,
                                          List<KeyValuePair<string, string>> content)
     {
-        var request = AddRequestContent(HttpSimpleAuth(user, password), content);
-        return await GetRequestAsync(request);
+        var requestContent = AddRequestContent(HttpSimpleAuth(user, password), content);
+        var req = await GetRequestAsync(requestContent); 
+
+        if (req.IsOk) {
+            return req.Value;
+        } else throw new Exception("Maximum ammount of retries reached");  
     }
 
     public async Task<dynamic> NoAuthRequestAsync() 
     {
-        return await GetRequestAsync(new HttpRequestMessage(HttpMethod.Get, _requestUri));
+        var req = await GetRequestAsync(new HttpRequestMessage(HttpMethod.Get, _requestUri));
+        if (req.IsOk) {
+            return req.Value;
+        } else throw new Exception("Maximum ammount of retries reached");
     }
     
     public void Dispose()

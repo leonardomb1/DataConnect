@@ -1,7 +1,7 @@
 using DataConnect.Shared;
-using DataConnect.Shared.Converter;
 using DataConnect.Etl.Sql;
 using DataConnect.Controller;
+using DataConnect.Shared.Converter;
 using WatsonWebserver.Core;
 using System.Data;
 using DataConnect.Types;
@@ -32,7 +32,7 @@ public static class StouApi
             KeyValuePair.Create("dtde", $"{filteredDate}"),
             KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
             KeyValuePair.Create("start", "1"),
-            KeyValuePair.Create("page", $"1"),
+            KeyValuePair.Create("page", "1"),
         };
 
         Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
@@ -41,23 +41,27 @@ public static class StouApi
             firstList
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
+        firstList.Clear();
 
         JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
         int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
-        DataTable table = new();
 
         List<Task> tasks = [];
-        var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
 
+        using DataTable table = new();
+        using var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
         using var sql = new SqlServerCall(conStr);
         
-        for (int i = 1; i < pageCount; i++)
+        for (int pageIter = 1; pageIter <= pageCount; pageIter += Environment.ProcessorCount + 1)
         {
-            for (int j = 0; j < Environment.ProcessorCount; j++)
+            for (int i = 0; i <= Environment.ProcessorCount; i++)
             {
+                if (pageIter >= pageCount) break;
+                int page = pageIter + i;
+                
                 await semaphore.WaitAsync();
-
-                tasks.Add(Task.Run<Result<dynamic, int>>(async () => {
+                tasks.Add(
+                    Task.Run<Result<dynamic, int>>(async () => {
                         var list = new List<KeyValuePair<string, string>>
                         {
                             KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
@@ -65,39 +69,34 @@ public static class StouApi
                             KeyValuePair.Create("dtde", filteredDate),
                             KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
                             KeyValuePair.Create("start", "1"),
-                            KeyValuePair.Create("page", $"{j}"),
+                            KeyValuePair.Create("page", $"{page}"),
                         };
-
-                        var ret = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+                        Result<dynamic, int> job = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
                             KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
                             KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
                             list
                         ]);
-                        
-                        return ret;
-                    }).ContinueWith(t => {
-                        if (t.Result.IsOk) {
-                            table.Merge(DynamicObjConvert.FromInnerJsonToDataTable(t.Result.Value, "itens"));
+                        return job;
+                    }).ContinueWith(thread => {
+                        if(thread.IsFaulted || (thread.IsCompleted & !thread.Result.IsOk)) {
+                            Log.Out($"Thread ID {thread.Id}, at status {thread.Status} returned error: {thread.Exception?.Message ?? "Generic Bad Request Handled Error"}");
                         } else {
-                            Log.Out($"Thread {t.Id}, has returned error");
+                            using DataTable parsedData = DynamicObjConvert.FromInnerJsonToDataTable(thread.Result.Value, "itens");
+                            table.Merge(parsedData);
                         }
-                        t.Dispose();
+                        thread.Dispose();
                         semaphore.Release();
                 }));    
             }
             await Task.WhenAll(tasks);
-
-            tasks.ForEach(x => x.Dispose());
             tasks.Clear();
             
-
             await Task.Delay(500);
             await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");
             await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, "DWExtract");
             table.Clear();
         }
 
-        table.Dispose();
         return ReturnedValues.MethodSuccess;
     }
 }
