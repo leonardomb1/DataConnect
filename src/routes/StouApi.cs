@@ -41,6 +41,8 @@ public static class StouApi
             firstList
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
+        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value,"itens");
+        table.Rows.Clear();
         firstList.Clear();
 
         JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
@@ -48,7 +50,6 @@ public static class StouApi
 
         List<Task> tasks = [];
 
-        using DataTable table = new();
         using var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
         using var sql = new SqlServerCall(conStr);
         
@@ -56,9 +57,7 @@ public static class StouApi
         {
             for (int i = 0; i <= Environment.ProcessorCount; i++)
             {
-                if (pageIter >= pageCount) break;
                 int page = pageIter + i;
-                
                 await semaphore.WaitAsync();
                 tasks.Add(
                     Task.Run<Result<dynamic, int>>(async () => {
@@ -71,6 +70,7 @@ public static class StouApi
                             KeyValuePair.Create("start", "1"),
                             KeyValuePair.Create("page", $"{page}"),
                         };
+                        Console.WriteLine(page);
                         Result<dynamic, int> job = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
                             KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
                             KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
@@ -89,12 +89,14 @@ public static class StouApi
                 }));    
             }
             await Task.WhenAll(tasks);
-            tasks.Clear();
             
-            await Task.Delay(500);
             await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");
             await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, "DWExtract");
-            table.Clear();
+
+            tasks.Clear();
+            table.Rows.Clear();
+
+            await Task.Delay(500);
         }
 
         return ReturnedValues.MethodSuccess;
