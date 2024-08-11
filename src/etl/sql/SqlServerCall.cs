@@ -49,8 +49,8 @@ public class SqlServerCall(string conStr) : IDisposable
             {
                 createTableQuery += $"[{column.ColumnName}] NVARCHAR(MAX), ";
             }
-            createTableQuery += $"ID_DW_{tableName.ToUpper()} INT IDENTITY(1,1) CONSTRAINT IX_{tableName.ToUpper()}_SK PRIMARY KEY, ";
-            createTableQuery += $"DT_UPDATE_{tableName.ToUpper()} DATETIME CONSTRAINT CK_UPDATE_{tableName.ToUpper()} DEFAULT(GETDATE()));";
+            createTableQuery += $"ID_DW_{tableName.ToUpper()} INT NOT NULL IDENTITY(1,1) CONSTRAINT IX_{tableName.ToUpper()}_SK PRIMARY KEY, ";
+            createTableQuery += $"DT_UPDATE_{tableName.ToUpper()} DATETIME NOT NULL CONSTRAINT CK_UPDATE_{tableName.ToUpper()} DEFAULT(GETDATE()));";
             command.CommandText = createTableQuery;
             await command.ExecuteNonQueryAsync();
         } else {

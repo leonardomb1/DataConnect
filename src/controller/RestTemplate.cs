@@ -76,10 +76,6 @@ public static class RestTemplate
             ctx.Response.StatusCode = 500;
             return ReturnedValues.MethodFail;
         }
-        finally
-        {
-            Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
-        }
     }
 
     public static async Task<Result<BodyDefault, int>> RequestStart(HttpContextBase ctx)
