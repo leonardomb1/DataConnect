@@ -13,42 +13,37 @@ namespace DataConnect.Routes;
 
 public static class StouApi
 {
-    public static async Task<int> PostPontoEspelho(HttpContextBase ctx, string conStr) 
+    public static async Task<int> StouEspelho(HttpContextBase ctx, string conStr, string database) 
     {
         Result<BodyDefault, int> requestResult = await RestTemplate.RequestStart(ctx);
         if (!requestResult.IsOk) return ReturnedValues.MethodFail;
         
         var obj = requestResult.Value;
-
+        if (obj.Options.Length <= 5 || !int.TryParse(obj.Options[5], out int lookBackTime)) 
+            return ReturnedValues.MethodFail;
+        
         var filteredDate =
             obj.Options[4] == "Incremental" ?  
-            $"{DateTime.Today.AddDays(-4):dd/MM/yyyy}" :
-            $"{DateTime.Today.AddDays(-410):dd/MM/yyyy}";
-
-        var firstList = new List<KeyValuePair<string, string>>
-        {
-            KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
-            KeyValuePair.Create("cmd", "get"),
-            KeyValuePair.Create("dtde", $"{filteredDate}"),
-            KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
-            KeyValuePair.Create("start", "1"),
-            KeyValuePair.Create("page", "1"),
-        };
+            $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}" :
+            $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
 
         Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
-            KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
-            KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
-            firstList
+            BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, 1)
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
-        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value,"itens");
+
+        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
         table.Rows.Clear();
-        firstList.Clear();
 
         JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
         int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
 
         List<Task> tasks = [];
+
+        Log.Out(
+            $"Starting extraction job {ctx.Request.Guid} for {obj.DestinationTableName} " +
+            $"looking back since: {filteredDate}"
+        );
 
         using var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
         using var sql = new SqlServerCall(conStr);
@@ -60,29 +55,20 @@ public static class StouApi
                 int page = pageIter + i;
                 await semaphore.WaitAsync();
                 tasks.Add(
-                    Task.Run<Result<dynamic, int>>(async () => {
-                        var list = new List<KeyValuePair<string, string>>
-                        {
-                            KeyValuePair.Create("pag", $"{obj.DestinationTableName}"),
-                            KeyValuePair.Create("cmd", "get"),
-                            KeyValuePair.Create("dtde", filteredDate),
-                            KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
-                            KeyValuePair.Create("start", "1"),
-                            KeyValuePair.Create("page", $"{page}"),
-                        };
-                        Console.WriteLine(page);
-                        Result<dynamic, int> job = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
-                            KeyValuePair.Create($"{obj.Options[0]}", $"{obj.Options[1]}"),
-                            KeyValuePair.Create($"{obj.Options[2]}", Encryption.Sha256($"{obj.Options[3]}{DateTime.Today:dd/MM/yyyy}")),
-                            list
+                    Task.Run(async () => {
+                        return await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+                           BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, page)
                         ]);
-                        return job;
                     }).ContinueWith(thread => {
                         if(thread.IsFaulted || (thread.IsCompleted & !thread.Result.IsOk)) {
-                            Log.Out($"Thread ID {thread.Id}, at status {thread.Status} returned error: {thread.Exception?.Message ?? "Generic Bad Request Handled Error"}");
+                            Log.Out(
+                                $"Thread ID {thread.Id}, at status {thread.Status} " + 
+                                $"returned error: {thread.Exception?.Message ?? "Generic Bad Request Handled Error"}"
+                            );
                         } else {
-                            using DataTable parsedData = DynamicObjConvert.FromInnerJsonToDataTable(thread.Result.Value, "itens");
-                            table.Merge(parsedData);
+                            var res = thread.Result.Value;
+                            using DataTable data = DynamicObjConvert.FromInnerJsonToDataTable(res, "itens");
+                            table.Merge(data, true, MissingSchemaAction.Ignore);
                         }
                         thread.Dispose();
                         semaphore.Release();
@@ -90,8 +76,8 @@ public static class StouApi
             }
             await Task.WhenAll(tasks);
             
-            await sql.CreateTable(obj.DestinationTableName, table, obj.SysName, "DWExtract");
-            await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, "DWExtract");
+            await sql.CreateTable(table, obj.DestinationTableName, obj.SysName, database);
+            await sql.BulkInsert(table, obj.DestinationTableName, obj.SysName, database);
 
             tasks.Clear();
             table.Rows.Clear();
@@ -99,6 +85,24 @@ public static class StouApi
             await Task.Delay(500);
         }
 
+        Log.Out(
+            $"Extraction job {ctx.Request.Guid} has succeeded."
+        );
+
         return ReturnedValues.MethodSuccess;
     }
+    private static List<KeyValuePair<string, string>> BuildPayload(string[] options,
+                                                                   string destinationTableName,
+                                                                   string filteredDate,
+                                                                   int page) =>
+        [
+            KeyValuePair.Create($"{options[0]}", $"{options[1]}"),
+            KeyValuePair.Create($"{options[2]}", Encryption.Sha256($"{options[3]}{DateTime.Today:dd/MM/yyyy}")),
+            KeyValuePair.Create("pag", destinationTableName),
+            KeyValuePair.Create("cmd", "get"),
+            KeyValuePair.Create("dtde", filteredDate),
+            KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
+            KeyValuePair.Create("start", "1"),
+            KeyValuePair.Create("page", $"{page}")
+        ];
 }

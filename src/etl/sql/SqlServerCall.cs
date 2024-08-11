@@ -33,8 +33,8 @@ public class SqlServerCall(string conStr) : IDisposable
         return ReturnedValues.MethodSuccess;
     }
 
-    public async Task CreateTable(string tableName,
-                                  DataTable table,
+    public async Task CreateTable(DataTable table,
+                                  string tableName,
                                   string sysName,
                                   string? database = null)
     {

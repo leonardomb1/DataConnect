@@ -80,7 +80,10 @@ public static class RestTemplate
 
     public static async Task<Result<BodyDefault, int>> RequestStart(HttpContextBase ctx)
     {
-        Log.Out($"Receiving {ctx.Request.Method} request for {ctx.Route} by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");
+        Log.Out(
+            $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
+            $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
+        );
     
         var attempt = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
 

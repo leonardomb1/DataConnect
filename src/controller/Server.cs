@@ -8,25 +8,30 @@ using DataConnect.Routes;
 
 namespace DataConnect.Controller;
 
-public class Server(int port, string conStr) : IDisposable
+public class Server(int port, string conStr, string database) : IDisposable
 {
     private bool _disposed;
     private readonly int _port = port;
     private readonly WebserverLite _server = new HostBuilder("*", port, false, NotFound)
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes)
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => StouApi.PostPontoEspelho(ctx, conStr))
+            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
+                return StouApi.StouEspelho(ctx, conStr, database);
+            })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", GetRoutes)
             .Build();
 
     public void Start()
     {
         _server.Start();
-        Console.WriteLine($"Listening on *:{_port}");
+        Log.Out($"Listening on *:{_port}");
     }
 
     private static async Task NotFound(HttpContextBase ctx)
     {
-        Log.Out($"Receiving {ctx.Request.Method} request for a non-existent resource by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");
+        Log.Out(
+            $"Receiving {ctx.Request.Method} request for a non-existent resource " +
+            $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
+        );
         
         string res = JsonSerializer.Serialize(new Response() {
             Error = false,
@@ -41,7 +46,10 @@ public class Server(int port, string conStr) : IDisposable
 
     private static async Task GetRoutes(HttpContextBase ctx) 
     {
-        Log.Out($"Receiving {ctx.Request.Method} request for {ctx.Route} by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}");
+        Log.Out(
+            $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " +
+            $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
+        );
         
         List<string> routes = [
             "POST /api/custom/ponto_espelho",
@@ -56,7 +64,7 @@ public class Server(int port, string conStr) : IDisposable
         });
 
         ctx.Response.StatusCode = 200;
-        Log.Out($"Response was: {ctx.Response.ResponseSent}");
+        Log.Out($"Response was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
         await ctx.Response.Send(res);
     }
     public void Dispose()

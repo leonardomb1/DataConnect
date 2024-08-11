@@ -4,11 +4,11 @@ services:
   runner:
     build: .
     ports:
-      - "10000:10000"
+      - "${PORT_TO_USE}:${PORT_TO_USE}"
     environment:
       - DW_CONNECTIONSTRING=${DW_CONNECTIONSTRING}
       - PORT_TO_USE=${PORT_TO_USE}
-      - PACKET_SIZE=${PACKET_SIZE}
+      - EXPORT_DATABASE=${EXPORT_DATABASE}
     deploy:
       resources:
         limits:
