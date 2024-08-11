@@ -42,6 +42,8 @@ public class Server(int port, string conStr, string database) : IDisposable
 
         ctx.Response.StatusCode = 404;
         await ctx.Response.Send(res);
+        
+        Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
     }
 
     private static async Task GetRoutes(HttpContextBase ctx) 
@@ -64,8 +66,9 @@ public class Server(int port, string conStr, string database) : IDisposable
         });
 
         ctx.Response.StatusCode = 200;
-        Log.Out($"Response was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
         await ctx.Response.Send(res);
+
+        Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
     }
     public void Dispose()
     {
