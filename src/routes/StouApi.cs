@@ -41,8 +41,10 @@ public static class StouApi
         List<Task> tasks = [];
 
         Log.Out(
-            $"Starting extraction job {ctx.Request.Guid} for {obj.DestinationTableName} " +
-            $"looking back since: {filteredDate}"
+            $"Starting extraction job {ctx.Request.Guid} for {obj.DestinationTableName}\n" +
+            $"  - Looking back since: {filteredDate}\n" +
+            $"  - Page count: {pageCount}\n" +
+            $"  - Estimated size: {pageCount * lookBackTime} lines"
         );
 
         using var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
