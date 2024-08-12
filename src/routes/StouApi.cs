@@ -46,14 +46,16 @@ public static class StouApi
             $"  - Page count: {pageCount}\n" +
             $"  - Estimated size: {pageCount * lookBackTime} lines"
         );
+        
+        int threadPagination = Environment.ProcessorCount * 4;
 
-        using var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
+        using var semaphore = new SemaphoreSlim(threadPagination);
         using var sql = new SqlServerCall(conStr);
 
-        for (int pageIter = 1; pageIter <= pageCount; pageIter += Environment.ProcessorCount + 1)
+        for (int pageIter = 1; pageIter <= pageCount; pageIter += threadPagination + 1)
         {
             await semaphore.WaitAsync();
-            for (int i = 0; i <= Environment.ProcessorCount; i++)
+            for (int i = 0; i <= threadPagination; i++)
             {
                 int page = pageIter + i;
                 tasks.Add(
@@ -70,9 +72,7 @@ public static class StouApi
                         } else {
                             var res = thread.Result.Value;
                             using DataTable data = DynamicObjConvert.FromInnerJsonToDataTable(res, "itens");
-                            lock (table) {
-                                table.Merge(data, true, MissingSchemaAction.Ignore);
-                            }
+                            table.Merge(data, true, MissingSchemaAction.Ignore);
                         }
                         thread.Dispose();
                         semaphore.Release();
