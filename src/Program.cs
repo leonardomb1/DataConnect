@@ -48,6 +48,7 @@ public class Program
 
             port = int.Parse(config[envs[0]]!);
             connection = config[envs[1]]!;
+            database = config[envs[2]]!;
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
