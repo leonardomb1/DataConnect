@@ -12,6 +12,7 @@ stages:
 # Build for main branchs
 job-build-main-branchs:
   before_script:
+    - docker builder prune
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
     - export IMAGE_TAG=${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_NAME}
   stage: build
@@ -19,4 +20,4 @@ job-build-main-branchs:
     - docker build -t $IMAGE_TAG .
     - docker push $IMAGE_TAG
   only:
-    - main
+    - dev
