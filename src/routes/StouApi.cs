@@ -26,8 +26,10 @@ public static class StouApi
             obj.Options[4] == "Incremental" ?  
             $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}" :
             $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
+        
+        using var client = new HttpClient();
 
-        Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+        Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, client, "SimpleAuthBodyRequestAsync", [
             BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, 1)
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
@@ -58,7 +60,7 @@ public static class StouApi
                 await semaphore.WaitAsync();
                 tasks.Add(
                     Task.Run(async () => {
-                        return await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
+                        return await RestTemplate.TemplatePostMethod(ctx, client, "SimpleAuthBodyRequestAsync", [
                            BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, page)
                         ]);
                     }).ContinueWith(thread => {

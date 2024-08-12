@@ -51,7 +51,6 @@ public class Program
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
-                    "Insufficient arguments provided\n" +
                     "Expected:  -e  <port> <connection>"
                 );
                 return;
