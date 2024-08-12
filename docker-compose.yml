@@ -1,0 +1,19 @@
+services:
+  runner:
+    build: .
+    ports:
+      - "${PORT_TO_USE}:${PORT_TO_USE}"
+    environment:
+      - DW_CONNECTIONSTRING=${DW_CONNECTIONSTRING}
+      - PORT_TO_USE=${PORT_TO_USE}
+      - EXPORT_DATABASE=${EXPORT_DATABASE}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    tty: true
+    stdin_open: true
