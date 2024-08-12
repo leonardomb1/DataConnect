@@ -20,4 +20,4 @@ job-build-main-branchs:
     - docker build -t $IMAGE_TAG .
     - docker push $IMAGE_TAG
   only:
-    - dev
+    - main
