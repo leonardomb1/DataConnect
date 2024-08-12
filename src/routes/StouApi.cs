@@ -26,10 +26,8 @@ public static class StouApi
             obj.Options[4] == "Incremental" ?  
             $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}" :
             $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
-        
-        using var client = new HttpClient();
 
-        Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, client, "SimpleAuthBodyRequestAsync", [
+        Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
             BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, 1)
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
@@ -51,16 +49,16 @@ public static class StouApi
 
         using var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
         using var sql = new SqlServerCall(conStr);
-        
+
         for (int pageIter = 1; pageIter <= pageCount; pageIter += Environment.ProcessorCount + 1)
         {
+            await semaphore.WaitAsync();
             for (int i = 0; i <= Environment.ProcessorCount; i++)
             {
                 int page = pageIter + i;
-                await semaphore.WaitAsync();
                 tasks.Add(
                     Task.Run(async () => {
-                        return await RestTemplate.TemplatePostMethod(ctx, client, "SimpleAuthBodyRequestAsync", [
+                        return await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
                            BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, page)
                         ]);
                     }).ContinueWith(thread => {
@@ -72,7 +70,9 @@ public static class StouApi
                         } else {
                             var res = thread.Result.Value;
                             using DataTable data = DynamicObjConvert.FromInnerJsonToDataTable(res, "itens");
-                            table.Merge(data, true, MissingSchemaAction.Ignore);
+                            lock (table) {
+                                table.Merge(data, true, MissingSchemaAction.Ignore);
+                            }
                         }
                         thread.Dispose();
                         semaphore.Release();
