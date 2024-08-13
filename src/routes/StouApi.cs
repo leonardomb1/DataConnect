@@ -68,7 +68,7 @@ public static class StouApi
             obj,
             table,
             page => BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, page),
-            100,
+            threadPagination,
             pageCount,
             "SimpleAuthBodyRequestAsync", // Requisição de autenticação simples
             database
