@@ -2,7 +2,7 @@ using System.Data;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace DataConnect.Shared.Converter;
+namespace DataConnect.Etl.Converter;
 
 public static class DynamicObjConvert
 {
