@@ -14,6 +14,9 @@ public class Server(int port, string conStr, string database, int threadPaginati
     private readonly int _port = port;
     private readonly WebserverLite _server = new HostBuilder("*", port, false, NotFound)
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes)
+            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) => {
+                return StouApi.StouAssinaturaEspelho(ctx, conStr, database);
+            })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
                 return StouApi.StouEspelho(ctx, conStr, database, threadPagination);
             })

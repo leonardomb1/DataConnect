@@ -19,10 +19,11 @@ public static class DynamicObjConvert
         {
             table.Columns.Add(element!.Key);
         }
-        DataRow lin = table.NewRow();
 
         foreach (var node in jsonList)
         {
+            DataRow lin = table.NewRow();
+
             foreach (var element in node!.AsObject())
             {
                 var value = element.Value ?? JsonNode.Parse($"\"\"");
@@ -38,10 +39,10 @@ public static class DynamicObjConvert
                     lin[element.Key] = value.ToJsonString();
                 }
             }
+
+            table.Rows.Add(lin);
         }
-        
-        table.Rows.Add(lin);
-        
+         
         return table;
     }
 }

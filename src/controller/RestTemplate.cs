@@ -10,7 +10,7 @@ using System.Reflection;
 namespace DataConnect.Controller;
 public static class RestTemplate
 {
-    public static async Task<Result<dynamic, int>> TemplatePostMethod(HttpContextBase ctx, string method, object?[] param)
+    public static async Task<Result<dynamic, int>> TemplateRequestHandler(HttpContextBase ctx, string method, object?[] param)
     {
         string res = "";
 

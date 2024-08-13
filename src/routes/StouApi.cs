@@ -28,21 +28,25 @@ public static class StouApi
                                               string database,
                                               int threadPagination) 
     {
-        Result<BodyDefault, int> requestResult = await RestTemplate.RequestStart(ctx);
-        if (!requestResult.IsOk) return ReturnedValues.MethodFail;
-        
-        var obj = requestResult.Value;
+        Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
+        if (!request.IsOk) return ReturnedValues.MethodFail;
+          var requestBody = request.Value;
 
-        if (obj.Options.Length <= 5 || !int.TryParse(obj.Options[5], out int lookBackTime)) 
+        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
             return ReturnedValues.MethodFail;
         
-        var filteredDate =
-            obj.Options[4] == "Incremental" ?  
-            $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}" :
-            $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
-
-        Result<dynamic, int> firstReturn = await RestTemplate.TemplatePostMethod(ctx, "SimpleAuthBodyRequestAsync", [
-            BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, 1)
+        var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
+        
+        // Realiza-se primeira chamada para resgatar quantidade de páginas.
+        Result<dynamic, int> firstReturn = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+            BuildPayload(
+                requestBody.Options, 
+                requestBody.DestinationTableName, 
+                filteredDate, 
+                ["dtde", "dtate"], 
+                1
+            ), 
+            System.Net.Http.HttpMethod.Post
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
 
@@ -53,7 +57,7 @@ public static class StouApi
         int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
 
         Log.Out(
-            $"Starting extraction job {ctx.Request.Guid} for {obj.DestinationTableName}\n" +
+            $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
             $"  - Looking back since: {filteredDate}\n" +
             $"  - Page count: {pageCount}\n" +
             $"  - Estimated size: {pageCount * lookBackTime} lines"
@@ -65,14 +69,62 @@ public static class StouApi
         await ExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
             serverCall,
-            obj,
+            requestBody,
             table,
-            page => BuildPayload(obj.Options, obj.DestinationTableName, filteredDate, page),
+            page => BuildPayload(
+                requestBody.Options, 
+                requestBody.DestinationTableName, 
+                filteredDate, 
+                ["dtde", "dtate"], 
+                page
+            ),
             threadPagination,
             pageCount,
             "SimpleAuthBodyRequestAsync", // Requisição de autenticação simples
             database
         );
+
+        Log.Out(
+            $"Extraction job {ctx.Request.Guid} has been completed."
+        );
+
+        return ReturnedValues.MethodSuccess; 
+    }
+
+    public static async Task<int> StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database)
+    {
+        Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
+        if (!request.IsOk) return ReturnedValues.MethodFail;
+        
+        var requestBody = request.Value;
+
+        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
+            return ReturnedValues.MethodFail;
+        
+        var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
+
+        Log.Out(
+            $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
+            $"  - Looking back since: {filteredDate}\n"
+        );
+
+        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+            BuildPayload(
+                requestBody.Options, 
+                requestBody.DestinationTableName, 
+                filteredDate, 
+                ["dtinicio", "dtfim"]
+            ), 
+            System.Net.Http.HttpMethod.Post
+        ]);
+        if (!res.IsOk) return ReturnedValues.MethodFail;
+
+
+        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
+        
+        using SqlServerCall serverCall = new(conStr);
+        await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
 
         Log.Out(
             $"Extraction job {ctx.Request.Guid} has been completed."
@@ -93,14 +145,15 @@ public static class StouApi
     private static List<KeyValuePair<string, string>> BuildPayload(string[] options,
                                                                    string destinationTableName,
                                                                    string filteredDate,
-                                                                   int page) =>
+                                                                   string[] nameSchema,
+                                                                   int? page = null) =>
         [
-            KeyValuePair.Create($"{options[0]}", $"{options[1]}"),
-            KeyValuePair.Create($"{options[2]}", Encryption.Sha256($"{options[3]}{DateTime.Today:dd/MM/yyyy}")),
+            KeyValuePair.Create(options[0], options[1]),
+            KeyValuePair.Create(options[2], Encryption.Sha256($"{options[3]}{DateTime.Today:dd/MM/yyyy}")),
             KeyValuePair.Create("pag", destinationTableName),
             KeyValuePair.Create("cmd", "get"),
-            KeyValuePair.Create("dtde", filteredDate),
-            KeyValuePair.Create("dtate", $"{DateTime.Today:dd/MM/yyyy}"),
+            KeyValuePair.Create(nameSchema[0], filteredDate),
+            KeyValuePair.Create(nameSchema[1], $"{DateTime.Today:dd/MM/yyyy}"),
             KeyValuePair.Create("start", "1"),
             KeyValuePair.Create("page", $"{page}")
         ];
