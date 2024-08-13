@@ -1,4 +1,5 @@
 using DataConnect.Controller;
+using DataConnect.Shared;
 
 namespace DataConnect;
 
@@ -27,6 +28,7 @@ public class Program
     private static void Run(bool isCmd, string[] args)
     {
         int port = 0;
+        int threadPagination = 0;
         string connection = "";
         string database = "";
 
@@ -35,6 +37,7 @@ public class Program
                 "PORT_TO_USE", 
                 "DW_CONNECTIONSTRING",
                 "EXPORT_DATABASE",
+                "THREAD_PAGINATION"
             };
 
             Dictionary<string, string?> config = envs.ToDictionary(
@@ -49,10 +52,11 @@ public class Program
             port = int.Parse(config[envs[0]]!);
             connection = config[envs[1]]!;
             database = config[envs[2]]!;
+            threadPagination = int.Parse(config[envs[3]]!);
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
-                    "Expected:  -e  <port> <connection>"
+                    "Expected:  -e  <port> <connection> <database> <threads>"
                 );
                 return;
             }
@@ -60,9 +64,10 @@ public class Program
             port = int.Parse(args[1]);
             connection = args[2];
             database = args[3];
+            threadPagination = int.Parse(args[4]);
         }
 
-        using var server = new Server(port, connection, database);
+        using var server = new Server(port, connection, database, threadPagination);
         server.Start();
         Console.Read();
     }
@@ -77,14 +82,14 @@ public class Program
             "   -v --version   Show version information\n" +
             "   -e --environment    <port> <connection>   Use configuration variables\n\n" +
             "Example:\n" +
-            "   DataConnect -e <port> <connection>"
+            "   DataConnect -e <port> <connection> <database> <threads>"
         );
     }
 
     private static void ShowVersion() 
     {
         ShowSignature();
-        Console.WriteLine("DataConnect version 1.0.0");
+        Console.WriteLine($"DataConnect version ${Constants.ProgramVersion}");
     }
 
     private static void ShowSignature() 

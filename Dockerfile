@@ -15,3 +15,4 @@ RUN chmod +x /app/DataConnect
 EXPOSE 10000
 
 ENTRYPOINT ["/app/DataConnect"]
+

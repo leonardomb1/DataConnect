@@ -4,3 +4,5 @@ out/
 .vscode
 build/
 *.env
+*/_site
+*/api

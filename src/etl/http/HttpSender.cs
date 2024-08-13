@@ -36,16 +36,24 @@ public class HttpSender(string requestUri,
         return request; 
     }
 
-    private async Task<Result<dynamic, int>> GetRequestAsync(HttpRequestMessage request)
+    private async Task<Result<dynamic, int>> GetRequestAsync(HttpRequestMessage requestTemplate)
     {
         var client = _httpClient;
         int maxRetries = 5;
-        int delay = 1000;
+        var delay = TimeSpan.FromMilliseconds(1000);
 
         for (int attempt = 0; attempt < maxRetries; attempt++) {
             try
             {
-                using var response = await client.SendAsync(request);
+                using HttpRequestMessage req = new(requestTemplate.Method, requestTemplate.RequestUri) {
+                    Content = requestTemplate.Content
+                };
+
+                foreach (var header in requestTemplate.Headers) {
+                    req.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+                
+                using var response = await client.SendAsync(req);
                 response.EnsureSuccessStatusCode();
                 var bodyObj = await response.Content.ReadFromJsonAsync<dynamic>();
 
@@ -55,8 +63,7 @@ public class HttpSender(string requestUri,
             {
                 Log.Out($"Request did not succeed, trying again. Observed exception was : {ex.Message}");
                 await Task.Delay(delay);
-
-                delay *= 2;
+                delay += TimeSpan.FromMilliseconds(100);
             }
         }
         return ReturnedValues.MethodFail;
