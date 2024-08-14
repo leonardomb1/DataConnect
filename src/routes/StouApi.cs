@@ -133,6 +133,42 @@ public static class StouApi
         return ReturnedValues.MethodSuccess; 
     }
 
+    public static async Task<int> StouBasic(HttpContextBase ctx, string conStr, string database)
+    {
+        Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
+        if (!request.IsOk) return ReturnedValues.MethodFail;
+        
+        var requestBody = request.Value;
+
+        Log.Out(
+            $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n"
+        );
+
+        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+            BuildPayload(
+                requestBody.Options, 
+                requestBody.DestinationTableName, 
+                "01/01/1900", 
+                ["a1", "a2"]
+            ), 
+            System.Net.Http.HttpMethod.Post
+        ]);
+        if (!res.IsOk) return ReturnedValues.MethodFail;
+
+
+        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
+        
+        using SqlServerCall serverCall = new(conStr);
+        await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+
+        Log.Out(
+            $"Extraction job {ctx.Request.Guid} has been completed."
+        );
+
+        return ReturnedValues.MethodSuccess; 
+    }
+
     /// <summary>
     /// Método para construção de requisição paginada das APIs da STOU.
     /// Token de autenticação segue lógica de hash: string dada por STOU + Data Atual, em SHA256.
