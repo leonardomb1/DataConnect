@@ -36,7 +36,7 @@ public class HttpSender(string requestUri,
         return request; 
     }
 
-    private async Task<Result<dynamic, int>> GetRequestAsync(HttpRequestMessage requestTemplate)
+    private async Task<Result<dynamic, int>> GetRequestAsync(HttpRequestMessage requestTemplate, HttpMethod method)
     {
         var client = _httpClient;
         int maxRetries = 5;
@@ -46,7 +46,8 @@ public class HttpSender(string requestUri,
             try
             {
                 using HttpRequestMessage req = new(requestTemplate.Method, requestTemplate.RequestUri) {
-                    Content = requestTemplate.Content
+                    Content = requestTemplate.Content,
+                    Method = method
                 };
 
                 foreach (var header in requestTemplate.Headers) {
@@ -69,7 +70,7 @@ public class HttpSender(string requestUri,
         return ReturnedValues.MethodFail;
     }
 
-    public async Task<dynamic> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload)
+    public async Task<dynamic> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method)
     {
         if (payload == null || payload.Count < 2)
             throw new ArgumentException("Insufficient parameters provided");
@@ -79,16 +80,19 @@ public class HttpSender(string requestUri,
         var content = payload.Skip(2).ToList();
         
         var requestContent = AddRequestContent(HttpSimpleAuth(user, password), content);
-        var req = await GetRequestAsync(requestContent); 
+        var req = await GetRequestAsync(requestContent, method); 
 
         if (req.IsOk) {
             return req.Value;
         } else throw new Exception("Maximum ammount of retries reached");  
     }
 
-    public async Task<dynamic> NoAuthRequestAsync() 
+    public async Task<dynamic> NoAuthRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method)
     {
-        var req = await GetRequestAsync(new HttpRequestMessage(HttpMethod.Get, _requestUri));
+        var content = payload;
+
+        var requestContent = AddRequestContent(new HttpRequestMessage(method, _requestUri), content);
+        var req = await GetRequestAsync(requestContent, method);
         if (req.IsOk) {
             return req.Value;
         } else throw new Exception("Maximum ammount of retries reached");

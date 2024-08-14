@@ -54,8 +54,8 @@ public static class ExtractTemplate
                     try {
                         do
                         {
-                            res = await RestTemplate.TemplatePostMethod(ctx, apiAuthMethod, 
-                                [listBuilder(page)]
+                            res = await RestTemplate.TemplateRequestHandler(ctx, apiAuthMethod, 
+                                [listBuilder(page), System.Net.Http.HttpMethod.Post] 
                             );
                             if (!res.IsOk) Log.Out($"Error at page {page}, trying again. Attempt {attempt + 1} - out of 5");
                             attempt++;
@@ -65,7 +65,7 @@ public static class ExtractTemplate
                             using var data = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
                             // Necessário realizar lock na tabela para segurança de recursos.
                             lock (table) {
-                                table.Merge(data, true, MissingSchemaAction.Ignore);
+                                table.Merge(data, false, MissingSchemaAction.Ignore);
                             }
                         }
                         return res;
@@ -87,14 +87,8 @@ public static class ExtractTemplate
             table.Rows.Clear();
             await Task.Delay(500);
         }
-
-        if (tasks.Count > 0)
-        {
-            await Task.WhenAll(tasks);
-            await serverCall.CreateTable(table, obj.DestinationTableName, obj.SysName, database);
-            await serverCall.BulkInsert(table, obj.DestinationTableName, obj.SysName, database);
-            tasks.ForEach(t => t.Dispose());
-            tasks.Clear();
-        }
+        
+        tasks.ForEach(t => t.Dispose());
+        tasks.Clear();
     }
 }
