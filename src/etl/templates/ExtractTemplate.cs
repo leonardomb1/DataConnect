@@ -6,6 +6,7 @@ using DataConnect.Controller;
 using System.Data;
 using WatsonWebserver.Core;
 using DataConnect.Models;
+using System.Collections.Concurrent;
 
 namespace DataConnect.Etl.Templates;
 
@@ -30,65 +31,67 @@ public static class ExtractTemplate
     /// <param name="apiAuthMethod">Nome do método que realizará a chamada à API.</param>
     /// <param name="database">Nome do banco de dados para extração.</param>
     public static async Task PaginatedApiToSqlDatabase(HttpContextBase ctx,
-                                                                            SqlServerCall serverCall,
+                                                                            string conStr,
                                                                             BodyDefault obj,
                                                                             DataTable table,
                                                                             Func<int, List<KeyValuePair<string, string>>> listBuilder,
                                                                             int threadPagination,
                                                                             int pageCount,
                                                                             string apiAuthMethod,
+                                                                            string innerProp,
                                                                             string? database = null)
     {
+        using var serverCall = new SqlServerCall(conStr);
         using var semaphore = new SemaphoreSlim(threadPagination);
-        var tasks = new List<Task>();
 
-        for (int pageIter = 1; pageIter <= pageCount; pageIter += threadPagination + 1)
-        {
-            // Cria-se uma lista de tarefas, da página atual até o limite de paralelismo definido.
-            var currentTasks = Enumerable.Range(pageIter, Math.Min(threadPagination, pageCount - pageIter + 1))
-                .Select(async page => {
-                    
-                    await semaphore.WaitAsync();
-                    Result<dynamic, int> res;
-                    int attempt = 0;
-                    try {
-                        do
-                        {
-                            res = await RestTemplate.TemplateRequestHandler(ctx, apiAuthMethod, 
-                                [listBuilder(page), System.Net.Http.HttpMethod.Post] 
-                            );
-                            if (!res.IsOk) Log.Out($"Error at page {page}, trying again. Attempt {attempt + 1} - out of 5");
-                            attempt++;
-                        } while(!res.IsOk || attempt < 5);
+        var queue = new BlockingCollection<DataTable>();
+        var tasks = new ConcurrentBag<Task>();
 
-                        if (res.IsOk) {
-                            using var data = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
-                            // Necessário realizar lock na tabela para segurança de recursos.
-                            lock (table) {
-                                table.Merge(data, false, MissingSchemaAction.Ignore);
-                            }
-                        }
-                        return res;
-                    } catch (Exception ex) {
-                        Log.Out($"Extraction failed at page {page}, error observed was: {ex.Message}");
-                        return ReturnedValues.MethodFail;
-                    } finally {
-                        semaphore.Release();
+        var fetcherTasks = Task.Run(async () => {
+            int pageIter = 1;
+
+            var fetch = Enumerable.Range(pageIter, pageCount).Select(async page => {
+                await semaphore.WaitAsync();
+                Result<dynamic, int> res;
+                int attempt = 0;
+                try {
+                    do
+                    {
+                        res = await RestTemplate.TemplateRequestHandler(ctx, apiAuthMethod, 
+                            [listBuilder(page), System.Net.Http.HttpMethod.Post] 
+                        );
+                        if (!res.IsOk) Log.Out($"Error at page {page}, trying again. Attempt {attempt} - out of 5");
+                        attempt++;
+                    } while(!res.IsOk || attempt < 5);
+
+                    if (res.IsOk) {
+                        using var cloneTable = table.Clone();
+                        using var data = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, innerProp); 
+                        cloneTable.Merge(data, false, MissingSchemaAction.Ignore);
+                        queue.Add(cloneTable);
                     }
+                    return res;
+                } catch (Exception ex) {
+                    Log.Out($"Extraction failed at page {page}, error observed was: {ex.Message}");
+                    return ReturnedValues.MethodFail;
+                } finally {
+                    semaphore.Release();
+                }
             });
 
-            tasks.AddRange(currentTasks);
-            await Task.WhenAll(tasks);
-            tasks.Clear();
-                
-            await serverCall.CreateTable(table, obj.DestinationTableName, obj.SysName, database);
-            await serverCall.BulkInsert(table, obj.DestinationTableName, obj.SysName, database);
+            await Task.WhenAll(fetch);
+            queue.CompleteAdding();
+        });
 
-            table.Rows.Clear();
-            await Task.Delay(500);
-        }
-        
-        tasks.ForEach(t => t.Dispose());
-        tasks.Clear();
+        var insertTasks = Task.Run(async () =>
+        {
+            foreach (var dataTable in queue.GetConsumingEnumerable())
+            {
+                await serverCall.BulkInsert(dataTable, obj.DestinationTableName, obj.SysName, database);
+                dataTable.Dispose();
+            }
+        });
+
+        await Task.WhenAll(fetcherTasks, insertTasks);
     }
 }
