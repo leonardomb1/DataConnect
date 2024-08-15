@@ -63,10 +63,7 @@ public static class ExtractTemplate
 
                         if (res.IsOk) {
                             using var data = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
-                            // Necessário realizar lock na tabela para segurança de recursos.
-                            lock (table) {
-                                table.Merge(data, false, MissingSchemaAction.Ignore);
-                            }
+                            table.Merge(data, false, MissingSchemaAction.Ignore);
                         }
                         return res;
                     } catch (Exception ex) {
@@ -80,8 +77,7 @@ public static class ExtractTemplate
             tasks.AddRange(currentTasks);
             await Task.WhenAll(tasks);
             tasks.Clear();
-                
-            await serverCall.CreateTable(table, obj.DestinationTableName, obj.SysName, database);
+            
             await serverCall.BulkInsert(table, obj.DestinationTableName, obj.SysName, database);
 
             table.Rows.Clear();

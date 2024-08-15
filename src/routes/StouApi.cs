@@ -50,8 +50,11 @@ public static class StouApi
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
 
+        using SqlServerCall serverCall = new(conStr);
         using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
         table.Rows.Clear();
+
+        await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
 
         JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
         int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
@@ -65,7 +68,6 @@ public static class StouApi
 
         // Extração em multi-thread da API.
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
-        using SqlServerCall serverCall = new(conStr);
         await ExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
             serverCall,
