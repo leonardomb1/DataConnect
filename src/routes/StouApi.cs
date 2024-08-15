@@ -50,11 +50,12 @@ public static class StouApi
         ]);
         if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
 
-        using SqlServerCall serverCall = new(conStr);
         using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
         table.Rows.Clear();
 
-        await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        SqlServerCall firstCall = new(conStr);
+        await firstCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        firstCall.Dispose();
 
         JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
         int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
@@ -62,15 +63,17 @@ public static class StouApi
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
             $"  - Looking back since: {filteredDate}\n" +
-            $"  - Page count: {pageCount}\n" +
-            $"  - Estimated size: {pageCount * lookBackTime} lines"
+            $"  - Page count: {pageCount}"
         );
 
         // Extração em multi-thread da API.
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
+        const string ApiAuthMethod = "SimpleAuthBodyRequestAsync";
+        const string InnerProp = "itens";
+        
         await ExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
-            serverCall,
+            conStr,
             requestBody,
             table,
             page => BuildPayload(
@@ -82,7 +85,8 @@ public static class StouApi
             ),
             threadPagination,
             pageCount,
-            "SimpleAuthBodyRequestAsync", // Requisição de autenticação simples
+            ApiAuthMethod,
+            InnerProp,
             database
         );
 
@@ -107,7 +111,7 @@ public static class StouApi
 
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
-            $"  - Looking back since: {filteredDate}\n"
+            $"  - Looking back since: {filteredDate}"
         );
 
         Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
