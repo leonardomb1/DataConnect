@@ -6,7 +6,7 @@ using DataConnect.Controller;
 using System.Data;
 using WatsonWebserver.Core;
 using DataConnect.Models;
-using System.Collections.Concurrent;
+using System.Threading.Channels;
 
 namespace DataConnect.Etl.Templates;
 
@@ -41,58 +41,61 @@ public static class ExtractTemplate
                                                                             string innerProp,
                                                                             string? database = null)
     {
-        var tasks = new ConcurrentBag<Task>();
-        
         using var serverCall = new SqlServerCall(conStr);
-        using var semaphore = new SemaphoreSlim(threadPagination);
-        using var queue = new BlockingCollection<DataTable>();
+        var options = new ParallelOptions { MaxDegreeOfParallelism = threadPagination };
+        var channel = Channel.CreateBounded<DataTable>(capacity: threadPagination);
 
-        using var fetcherTasks = Task.Run(async () => {
-            var fetch = Enumerable.Range(1, pageCount)
-                .Select(page => Task.Run(async () => {
-                    await semaphore.WaitAsync();
-                    Result<dynamic, int> res;
-                    int attempt = 0;
-                    try {
-                        do
-                        {
-                            res = await RestTemplate.TemplateRequestHandler(ctx, apiAuthMethod, 
-                                [listBuilder(page), System.Net.Http.HttpMethod.Post] 
-                            );
-                            if (!res.IsOk) Log.Out($"Error at page {page}, trying again. Attempt {attempt} - out of 5");
-                            attempt++;
-                        } while(!res.IsOk || attempt < 5);
+        var fetch = Task.Run(async () => {
+            await Parallel.ForEachAsync(Enumerable.Range(1, pageCount), options, async (page, token) => {
+                Result<dynamic, int> res;
+                int attempt = 0;
+                do
+                {
+                    res = await RestTemplate.TemplateRequestHandler(
+                        ctx, apiAuthMethod, 
+                        [listBuilder(page), System.Net.Http.HttpMethod.Post]
+                    );
 
-                        if (res.IsOk) {
-                            using var cloneTable = table.Clone();
-                            using var data = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, innerProp); 
-                            cloneTable.Merge(data, false, MissingSchemaAction.Ignore);
-                            queue.Add(cloneTable);
-                        }
-                        return res;
-                    } catch (Exception ex) {
-                        Log.Out($"Extraction failed at page {page}, error observed was: {ex.Message}");
-                        return ReturnedValues.MethodFail;
-                    } finally {
-                        semaphore.Release();
-                    }
-                }).ContinueWith(thread => thread.Dispose())
-            );
+                    if (!res.IsOk) Log.Out($"Error at page {page}, trying again. Attempt {attempt} - out of 5");
+                    attempt++;
+                } while (!res.IsOk || attempt < 5);
 
-            await Task.WhenAll(fetch);
-            queue.CompleteAdding();
+                if (res.IsOk)
+                {
+                    var columnMap = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
+
+                    using DataTable rawData = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, innerProp);
+                    using DataTable clone = table.Clone();
+
+                    clone.Merge(rawData, false, MissingSchemaAction.Add);
+
+                    await channel.Writer.WriteAsync(
+                        clone
+                            .DefaultView
+                            .ToTable(
+                                false, 
+                                columnMap
+                            ), 
+                        token
+                    );
+                }
+                else
+                {
+                    Log.Out($"Extraction failed at page {page}, observed error was: {res.Error}");
+                }
+
+                await Task.Delay(600, token);
+            });
         });
 
-        using var insertTasks = Task.Run(async () =>
-        {
-            foreach (var dataTable in queue.GetConsumingEnumerable())
+        var insert = Task.Run(async () => {
+            await foreach (var dataTable in channel.Reader.ReadAllAsync())
             {
                 await serverCall.BulkInsert(dataTable, obj.DestinationTableName, obj.SysName, database);
                 dataTable.Dispose();
             }
         });
 
-        await Task.WhenAll(fetcherTasks, insertTasks);
-        tasks.Clear();
+        await Task.WhenAll(fetch, insert);
     }
 }

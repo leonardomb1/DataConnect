@@ -30,7 +30,7 @@ public static class RestTemplate
                     });
                     ctx.Response.StatusCode = 400;
                     await ctx.Response.Send(res);
-                    return ReturnedValues.MethodFail;
+                    return Constants.MethodFail;
                 }
 
                 var req = result.Value;
@@ -61,7 +61,7 @@ public static class RestTemplate
                 });
                 ctx.Response.StatusCode = 400;
                 await ctx.Response.Send(res);
-                return ReturnedValues.MethodFail;
+                return Constants.MethodFail;
             }
         }
         catch (Exception ex)
@@ -75,7 +75,7 @@ public static class RestTemplate
             Log.Out($"Error occured after request {ex.Message}");
             ctx.Response.StatusCode = 500;
             await ctx.Response.Send(res);
-            return ReturnedValues.MethodFail;
+            return Constants.MethodFail;
         }
     }
 
@@ -101,7 +101,7 @@ public static class RestTemplate
             ctx.Response.StatusCode = 400;
 
             await ctx.Response.Send(res);
-            return ReturnedValues.MethodFail;
+            return Constants.MethodFail;
         }
     }
 }

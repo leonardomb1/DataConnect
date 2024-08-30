@@ -29,11 +29,11 @@ public static class StouApi
                                               int threadPagination) 
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
-        if (!request.IsOk) return ReturnedValues.MethodFail;
+        if (!request.IsOk) return Constants.MethodFail;
           var requestBody = request.Value;
 
         if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
-            return ReturnedValues.MethodFail;
+            return Constants.MethodFail;
         
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
         
@@ -48,7 +48,7 @@ public static class StouApi
             ), 
             System.Net.Http.HttpMethod.Post
         ]);
-        if (!firstReturn.IsOk) return ReturnedValues.MethodFail;
+        if (!firstReturn.IsOk) return Constants.MethodFail;
 
         using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
         table.Rows.Clear();
@@ -94,18 +94,18 @@ public static class StouApi
             $"Extraction job {ctx.Request.Guid} has been completed."
         );
 
-        return ReturnedValues.MethodSuccess; 
+        return Constants.MethodSuccess; 
     }
 
     public static async Task<int> StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database)
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
-        if (!request.IsOk) return ReturnedValues.MethodFail;
+        if (!request.IsOk) return Constants.MethodFail;
         
         var requestBody = request.Value;
 
         if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
-            return ReturnedValues.MethodFail;
+            return Constants.MethodFail;
         
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
 
@@ -123,7 +123,7 @@ public static class StouApi
             ), 
             System.Net.Http.HttpMethod.Post
         ]);
-        if (!res.IsOk) return ReturnedValues.MethodFail;
+        if (!res.IsOk) return Constants.MethodFail;
 
 
         using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
@@ -136,13 +136,13 @@ public static class StouApi
             $"Extraction job {ctx.Request.Guid} has been completed."
         );
 
-        return ReturnedValues.MethodSuccess; 
+        return Constants.MethodSuccess; 
     }
 
     public static async Task<int> StouBasic(HttpContextBase ctx, string conStr, string database)
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
-        if (!request.IsOk) return ReturnedValues.MethodFail;
+        if (!request.IsOk) return Constants.MethodFail;
         
         var requestBody = request.Value;
 
@@ -159,7 +159,7 @@ public static class StouApi
             ), 
             System.Net.Http.HttpMethod.Post
         ]);
-        if (!res.IsOk) return ReturnedValues.MethodFail;
+        if (!res.IsOk) return Constants.MethodFail;
 
 
         using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
@@ -172,7 +172,7 @@ public static class StouApi
             $"Extraction job {ctx.Request.Guid} has been completed."
         );
 
-        return ReturnedValues.MethodSuccess; 
+        return Constants.MethodSuccess; 
     }
 
     /// <summary>

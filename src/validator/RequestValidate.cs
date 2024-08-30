@@ -15,7 +15,7 @@ public static class RequestValidate
             return JsonSerializer.Deserialize<BodyDefault>(json);
         }
         else {
-            return ReturnedValues.MethodFail;
+            return Constants.MethodFail;
         }
     }
     public static bool IsValidJson(dynamic json)

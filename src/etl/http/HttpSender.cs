@@ -67,7 +67,7 @@ public class HttpSender(string requestUri,
                 delay += TimeSpan.FromMilliseconds(100);
             }
         }
-        return ReturnedValues.MethodFail;
+        return Constants.MethodFail;
     }
 
     public async Task<dynamic> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method)
