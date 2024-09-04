@@ -26,7 +26,8 @@ public static class StouApi
     public static async Task<int> StouEspelho(HttpContextBase ctx,
                                               string conStr,
                                               string database,
-                                              int threadPagination) 
+                                              int threadPagination,
+                                              int threadTimeout) 
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
@@ -87,6 +88,7 @@ public static class StouApi
             pageCount,
             ApiAuthMethod,
             InnerProp,
+            threadTimeout,
             database
         );
 

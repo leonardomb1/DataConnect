@@ -8,7 +8,7 @@ using DataConnect.Routes;
 
 namespace DataConnect.Controller;
 
-public class Server(int port, string conStr, string database, int threadPagination) : IDisposable
+public class Server(int port, string conStr, string database, int threadPagination, int threadTimeout) : IDisposable
 {
     private bool _disposed;
     private readonly int _port = port;
@@ -18,7 +18,7 @@ public class Server(int port, string conStr, string database, int threadPaginati
                 return StouApi.StouAssinaturaEspelho(ctx, conStr, database);
             })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
-                return StouApi.StouEspelho(ctx, conStr, database, threadPagination);
+                return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout);
             })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) => {
                 return StouApi.StouBasic(ctx, conStr, database);

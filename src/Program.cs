@@ -28,6 +28,7 @@ public class Program
     private static void Run(bool isCmd, string[] args)
     {
         int port = 0;
+        int threadTimeout = 0;
         int threadPagination = 0;
         string connection = "";
         string database = "";
@@ -37,7 +38,8 @@ public class Program
                 "PORT_TO_USE", 
                 "DW_CONNECTIONSTRING",
                 "EXPORT_DATABASE",
-                "THREAD_PAGINATION"
+                "THREAD_PAGINATION",
+                "THREAD_TIMEOUT",
             };
 
             Dictionary<string, string?> config = envs.ToDictionary(
@@ -53,10 +55,11 @@ public class Program
             connection = config[envs[1]]!;
             database = config[envs[2]]!;
             threadPagination = int.Parse(config[envs[3]]!);
+            threadTimeout = int.Parse(config[envs[4]]!);
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
-                    "Expected:  -e  <port> <connection> <database> <threads>"
+                    "Expected:  -e  <port> <connection> <database> <thread timeout>"
                 );
                 return;
             }
@@ -65,9 +68,10 @@ public class Program
             connection = args[2];
             database = args[3];
             threadPagination = int.Parse(args[4]);
+            threadTimeout = int.Parse(args[5]);
         }
 
-        using var server = new Server(port, connection, database, threadPagination);
+        using var server = new Server(port, connection, database, threadPagination, threadTimeout);
         server.Start();
         Console.Read();
     }
@@ -82,7 +86,7 @@ public class Program
             "   -v --version   Show version information\n" +
             "   -e --environment    <port> <connection>   Use configuration variables\n\n" +
             "Example:\n" +
-            "   DataConnect -e <port> <connection> <database> <threads>"
+            "   DataConnect -e <port> <connection> <database> <threads> <thread timeout>"
         );
     }
 

@@ -39,6 +39,7 @@ public static class ExtractTemplate
                                                                             int pageCount,
                                                                             string apiAuthMethod,
                                                                             string innerProp,
+                                                                            int threadTimeout,
                                                                             string? database = null)
     {
         using var serverCall = new SqlServerCall(conStr);
@@ -84,7 +85,7 @@ public static class ExtractTemplate
                     Log.Out($"Extraction failed at page {page}, observed error was: {res.Error}");
                 }
 
-                await Task.Delay(600, token);
+                await Task.Delay(threadTimeout, token);
             });
         });
 

@@ -1,19 +1,19 @@
 services:
   runner:
-    build: .
+    image: registry-gitlab.ripbr.com.br/ti-dados/dataconnect:main
+    network_mode: bridge
     ports:
       - "${PORT_TO_USE}:${PORT_TO_USE}"
     environment:
       - DW_CONNECTIONSTRING=${DW_CONNECTIONSTRING}
       - PORT_TO_USE=${PORT_TO_USE}
       - EXPORT_DATABASE=${EXPORT_DATABASE}
+      - THREAD_PAGINATION=${THREAD_PAGINATION}
     deploy:
       resources:
         limits:
-          cpus: '0.50'
-          memory: 512M
+          memory: 10G
         reservations:
-          cpus: '0.25'
           memory: 256M
     tty: true
     stdin_open: true
