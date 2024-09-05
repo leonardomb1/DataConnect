@@ -31,16 +31,17 @@ public static class ExtractTemplate
     /// <param name="apiAuthMethod">Nome do método que realizará a chamada à API.</param>
     /// <param name="database">Nome do banco de dados para extração.</param>
     public static async Task PaginatedApiToSqlDatabase(HttpContextBase ctx,
-                                                                            string conStr,
-                                                                            BodyDefault obj,
-                                                                            DataTable table,
-                                                                            Func<int, List<KeyValuePair<string, string>>> listBuilder,
-                                                                            int threadPagination,
-                                                                            int pageCount,
-                                                                            string apiAuthMethod,
-                                                                            string innerProp,
-                                                                            int threadTimeout,
-                                                                            string? database = null)
+                                                       HttpClient client,
+                                                       string conStr,
+                                                       BodyDefault obj,
+                                                       DataTable table,
+                                                       Func<int, List<KeyValuePair<string, string>>> listBuilder,
+                                                       int threadPagination,
+                                                       int pageCount,
+                                                       string apiAuthMethod,
+                                                       string innerProp,
+                                                       int threadTimeout,
+                                                       string? database = null)
     {
         using var serverCall = new SqlServerCall(conStr);
         var options = new ParallelOptions { MaxDegreeOfParallelism = threadPagination };
@@ -53,7 +54,7 @@ public static class ExtractTemplate
                 do
                 {
                     res = await RestTemplate.TemplateRequestHandler(
-                        ctx, apiAuthMethod, 
+                        ctx, client, apiAuthMethod, 
                         [listBuilder(page), System.Net.Http.HttpMethod.Post]
                     );
 
@@ -64,21 +65,10 @@ public static class ExtractTemplate
                 if (res.IsOk)
                 {
                     var columnMap = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
-
                     using DataTable rawData = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, innerProp);
                     using DataTable clone = table.Clone();
-
                     clone.Merge(rawData, false, MissingSchemaAction.Add);
-
-                    await channel.Writer.WriteAsync(
-                        clone
-                            .DefaultView
-                            .ToTable(
-                                false, 
-                                columnMap
-                            ), 
-                        token
-                    );
+                    await channel.Writer.WriteAsync(clone.DefaultView.ToTable(false, columnMap), token);
                 }
                 else
                 {
@@ -87,6 +77,8 @@ public static class ExtractTemplate
 
                 await Task.Delay(threadTimeout, token);
             });
+
+            channel.Writer.Complete();
         });
 
         var insert = Task.Run(async () => {

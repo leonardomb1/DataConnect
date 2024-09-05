@@ -39,7 +39,8 @@ public static class StouApi
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
         
         // Realiza-se primeira chamada para resgatar quantidade de páginas.
-        Result<dynamic, int> firstReturn = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+        using var client = new HttpClient();
+        Result<dynamic, int> firstReturn = await RestTemplate.TemplateRequestHandler(ctx, client, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
@@ -47,7 +48,7 @@ public static class StouApi
                 ["dtde", "dtate"], 
                 1
             ), 
-            System.Net.Http.HttpMethod.Post
+            System.Net.Http.HttpMethod.Post,
         ]);
         if (!firstReturn.IsOk) return Constants.MethodFail;
 
@@ -71,9 +72,9 @@ public static class StouApi
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
         const string ApiAuthMethod = "SimpleAuthBodyRequestAsync";
         const string InnerProp = "itens";
-        
         await ExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
+            client,
             conStr,
             requestBody,
             table,
@@ -115,8 +116,8 @@ public static class StouApi
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
             $"  - Looking back since: {filteredDate}"
         );
-
-        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+        using var client = new HttpClient();
+        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, client, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
@@ -151,8 +152,8 @@ public static class StouApi
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n"
         );
-
-        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+        using var client = new HttpClient();
+        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, client, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 

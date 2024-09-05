@@ -11,9 +11,9 @@ public class HttpSender(string requestUri,
 {
     private bool _disposed;
     private readonly string _requestUri = requestUri
-        ?? throw new ArgumentNullException(requestUri, nameof(requestUri));
+        ?? throw new ArgumentNullException("requestUri", "URI Has not been passed to Sender.");
     private readonly HttpClient _httpClient = httpClient
-        ?? throw new ArgumentNullException(requestUri, nameof(requestUri));
+        ?? throw new ArgumentNullException("httpClient", "HTTP Client has not been passed to Sender.");
 
     private HttpRequestMessage HttpSimpleAuth(KeyValuePair<string, string> user,
                                              KeyValuePair<string, string> password)

@@ -12,37 +12,47 @@ public static class DynamicObjConvert
 
         var table = new DataTable();
 
+        // Deserialize once, instead of dynamically each time
         JsonNode json = JsonSerializer.Deserialize<JsonObject>(obj);
         JsonArray jsonList = json[prop]!.AsArray();
 
-        foreach (var element in jsonList.FirstOrDefault()!.AsObject())
+        // Predefine columns (assuming the first row contains all keys)
+        if (jsonList.Count > 0)
         {
-            table.Columns.Add(element!.Key);
+            var firstRow = jsonList[0]!.AsObject();
+            foreach (var element in firstRow)
+            {
+                table.Columns.Add(element!.Key);
+            }
         }
 
+        table.BeginLoadData(); // Start bulk data load
+
+        // Process rows and populate the DataTable
         foreach (var node in jsonList)
         {
-            DataRow lin = table.NewRow();
+            DataRow row = table.NewRow();
 
             foreach (var element in node!.AsObject())
             {
-                var value = element.Value ?? JsonNode.Parse($"\"\"");
-                if (!table.Columns.Contains(element.Key))
-                {
-                    table.Columns.Add(element.Key);
-                }
+                var value = element.Value ?? JsonNode.Parse($"\"\""); // Handle null values
 
-                if (value!.GetValueKind() != JsonValueKind.Array && value!.GetValueKind() != JsonValueKind.Object)
+                if (value!.GetValueKind() != JsonValueKind.Array && value.GetValueKind() != JsonValueKind.Object)
                 {
-                    lin[element.Key] = value.GetValue<dynamic>();
-                } else {
-                    lin[element.Key] = value.ToJsonString();
+                    row[element.Key] = value.GetValue<string>(); // Adjust to specific types if necessary
+                }
+                else
+                {
+                    row[element.Key] = value.ToJsonString(); // Handle complex types as JSON strings
                 }
             }
 
-            table.Rows.Add(lin);
+            table.Rows.Add(row); // Add row to DataTable
         }
-         
+
+        table.EndLoadData(); // End bulk data load
+        
         return table;
     }
+
 }
