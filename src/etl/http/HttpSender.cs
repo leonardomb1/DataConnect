@@ -6,19 +6,25 @@ using DataConnect.Types;
 
 namespace DataConnect.Etl.Http;
 
-public class HttpSender(string requestUri,
-                        HttpClient httpClient) : IDisposable
+public class HttpSender : IDisposable
 {
     private bool _disposed;
-    private readonly string _requestUri = requestUri
-        ?? throw new ArgumentNullException(requestUri, nameof(requestUri));
-    private readonly HttpClient _httpClient = httpClient
-        ?? throw new ArgumentNullException(requestUri, nameof(requestUri));
+    private readonly IHttpClientFactory _clientFactory;
+    private readonly HttpClient _httpClient;
 
-    private HttpRequestMessage HttpSimpleAuth(KeyValuePair<string, string> user,
-                                             KeyValuePair<string, string> password)
+    public HttpSender(IHttpClientFactory httpClientFactory)
+    {       
+        _clientFactory = httpClientFactory 
+            ?? throw new ArgumentNullException(nameof(httpClientFactory), "HTTP Factory has not been passed to Sender.");
+
+        _httpClient = _clientFactory.CreateClient();
+    }
+
+    private static HttpRequestMessage HttpSimpleAuth(KeyValuePair<string, string> user,
+                                             KeyValuePair<string, string> password,
+                                             string uri)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, _requestUri);
+        var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Add(user.Key, user.Value);
         request.Headers.Add(password.Key, password.Value);
 
@@ -50,6 +56,8 @@ public class HttpSender(string requestUri,
                     Method = method
                 };
 
+                req.Headers.ConnectionClose = true;
+
                 foreach (var header in requestTemplate.Headers) {
                     req.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 }
@@ -62,7 +70,10 @@ public class HttpSender(string requestUri,
             }
             catch (Exception ex) when (attempt < maxRetries - 1)
             {
-                Log.Out($"Request did not succeed, trying again. Observed exception was : {ex.Message}");
+                Log.Out(
+                    $"Request did not succeed, trying again. Observed exception was : {ex.Message}" +
+                    $"\n     - Source at: {ex.Source}"
+                );
                 await Task.Delay(delay);
                 delay += TimeSpan.FromMilliseconds(100);
             }
@@ -70,7 +81,7 @@ public class HttpSender(string requestUri,
         return Constants.MethodFail;
     }
 
-    public async Task<dynamic> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method)
+    public async Task<dynamic> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method, string uri)
     {
         if (payload == null || payload.Count < 2)
             throw new ArgumentException("Insufficient parameters provided");
@@ -79,7 +90,7 @@ public class HttpSender(string requestUri,
         var password = payload[1];
         var content = payload.Skip(2).ToList();
         
-        var requestContent = AddRequestContent(HttpSimpleAuth(user, password), content);
+        var requestContent = AddRequestContent(HttpSimpleAuth(user, password, uri), content);
         var req = await GetRequestAsync(requestContent, method); 
 
         if (req.IsOk) {
@@ -87,11 +98,11 @@ public class HttpSender(string requestUri,
         } else throw new Exception("Maximum ammount of retries reached");  
     }
 
-    public async Task<dynamic> NoAuthRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method)
+    public async Task<dynamic> NoAuthRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method, string uri)
     {
         var content = payload;
 
-        var requestContent = AddRequestContent(new HttpRequestMessage(method, _requestUri), content);
+        var requestContent = AddRequestContent(new HttpRequestMessage(method, uri), content);
         var req = await GetRequestAsync(requestContent, method);
         if (req.IsOk) {
             return req.Value;
@@ -111,7 +122,7 @@ public class HttpSender(string requestUri,
         }
 
         if (disposing) {
-           // Objetos para limpeza de memória.
+           _httpClient?.Dispose();
         }
 
         _disposed = true;

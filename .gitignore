@@ -6,3 +6,5 @@ build/
 *.env
 */_site
 */api
+docker-compose-local.yml
+docker-compose.yml

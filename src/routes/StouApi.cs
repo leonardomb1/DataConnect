@@ -9,6 +9,7 @@ using DataConnect.Models;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DataConnect.Etl.Templates;
+using DataConnect.Etl.Http;
 
 namespace DataConnect.Routes;
 
@@ -27,7 +28,8 @@ public static class StouApi
                                               string conStr,
                                               string database,
                                               int threadPagination,
-                                              int threadTimeout) 
+                                              int threadTimeout,
+                                              HttpSender sender) 
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
@@ -39,7 +41,7 @@ public static class StouApi
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
         
         // Realiza-se primeira chamada para resgatar quantidade de páginas.
-        Result<dynamic, int> firstReturn = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+        Result<dynamic, int> firstReturn = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
@@ -47,7 +49,8 @@ public static class StouApi
                 ["dtde", "dtate"], 
                 1
             ), 
-            System.Net.Http.HttpMethod.Post
+            System.Net.Http.HttpMethod.Post,
+            request.Value.ConnectionInfo
         ]);
         if (!firstReturn.IsOk) return Constants.MethodFail;
 
@@ -71,9 +74,9 @@ public static class StouApi
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
         const string ApiAuthMethod = "SimpleAuthBodyRequestAsync";
         const string InnerProp = "itens";
-        
         await ExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
+            sender,
             conStr,
             requestBody,
             table,
@@ -89,6 +92,7 @@ public static class StouApi
             ApiAuthMethod,
             InnerProp,
             threadTimeout,
+            request.Value.ConnectionInfo,
             database
         );
 
@@ -99,7 +103,7 @@ public static class StouApi
         return Constants.MethodSuccess; 
     }
 
-    public static async Task<int> StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database)
+    public static async Task<int> StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
@@ -116,14 +120,15 @@ public static class StouApi
             $"  - Looking back since: {filteredDate}"
         );
 
-        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
                 filteredDate, 
                 ["dtinicio", "dtfim"]
             ), 
-            System.Net.Http.HttpMethod.Post
+            System.Net.Http.HttpMethod.Post,
+            request.Value.ConnectionInfo
         ]);
         if (!res.IsOk) return Constants.MethodFail;
 
@@ -141,7 +146,7 @@ public static class StouApi
         return Constants.MethodSuccess; 
     }
 
-    public static async Task<int> StouBasic(HttpContextBase ctx, string conStr, string database)
+    public static async Task<int> StouBasic(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
@@ -151,15 +156,16 @@ public static class StouApi
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n"
         );
-
-        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, "SimpleAuthBodyRequestAsync", [
+        using var client = new HttpClient();
+        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
                 "01/01/1900", 
                 ["a1", "a2"]
             ), 
-            System.Net.Http.HttpMethod.Post
+            System.Net.Http.HttpMethod.Post,
+            request.Value.ConnectionInfo
         ]);
         if (!res.IsOk) return Constants.MethodFail;
 

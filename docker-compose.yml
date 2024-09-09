@@ -1,6 +1,6 @@
 services:
   runner:
-    image: registry-gitlab.ripbr.com.br/ti-dados/dataconnect:main
+    build: .
     network_mode: bridge
     ports:
       - "${PORT_TO_USE}:${PORT_TO_USE}"
@@ -9,6 +9,7 @@ services:
       - PORT_TO_USE=${PORT_TO_USE}
       - EXPORT_DATABASE=${EXPORT_DATABASE}
       - THREAD_PAGINATION=${THREAD_PAGINATION}
+      - THREAD_TIMEOUT=${THREAD_TIMEOUT}
     deploy:
       resources:
         limits:

@@ -1,5 +1,8 @@
 using DataConnect.Controller;
 using DataConnect.Shared;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace DataConnect;
 
@@ -71,11 +74,19 @@ public class Program
             threadTimeout = int.Parse(args[5]);
         }
 
-        using var server = new Server(port, connection, database, threadPagination, threadTimeout);
+        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout).Build();
+        using var server = host.Services.GetRequiredService<Server>();
         server.Start();
         Console.Read();
     }
-
+    public static IHostBuilder CreateHostBuilder(string[] args, int port, string connection, string database, int threadPagination, int threadTimeout) =>
+                Host.CreateDefaultBuilder(args)
+                    .ConfigureLogging(logging => {
+                        logging.ClearProviders();
+                    })
+                    .ConfigureServices((_, services) =>
+                        services.AddHttpClient()
+                                .AddSingleton(new Server(port, connection, database, threadPagination, threadTimeout, services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
     private static void ShowHelp() 
     {
         ShowSignature();

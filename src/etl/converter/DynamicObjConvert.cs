@@ -1,6 +1,6 @@
 using System.Data;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+
 
 namespace DataConnect.Etl.Converter;
 
@@ -10,39 +10,37 @@ public static class DynamicObjConvert
     {
         ArgumentNullException.ThrowIfNull(obj, nameof(obj));
 
+        string json = Convert.ToString(obj);
         var table = new DataTable();
 
-        JsonNode json = JsonSerializer.Deserialize<JsonObject>(obj);
-        JsonArray jsonList = json[prop]!.AsArray();
+        JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement.GetProperty(prop);
 
-        foreach (var element in jsonList.FirstOrDefault()!.AsObject())
+        if (root.ValueKind == JsonValueKind.Array)
         {
-            table.Columns.Add(element!.Key);
-        }
-
-        foreach (var node in jsonList)
-        {
-            DataRow lin = table.NewRow();
-
-            foreach (var element in node!.AsObject())
+            foreach (JsonElement element in root.EnumerateArray())
             {
-                var value = element.Value ?? JsonNode.Parse($"\"\"");
-                if (!table.Columns.Contains(element.Key))
+                if (table.Columns.Count == 0)
                 {
-                    table.Columns.Add(element.Key);
+                    foreach (JsonProperty property in element.EnumerateObject())
+                    {
+                        table.Columns.Add(property.Name);
+                    }
                 }
 
-                if (value!.GetValueKind() != JsonValueKind.Array && value!.GetValueKind() != JsonValueKind.Object)
+                DataRow row = table.NewRow();
+                foreach (JsonProperty property in element.EnumerateObject())
                 {
-                    lin[element.Key] = value.GetValue<dynamic>();
-                } else {
-                    lin[element.Key] = value.ToJsonString();
+                    if (!table.Columns.Contains(property.Name)) {
+                        table.Columns.Add(property.Name);
+                    }
+                    row[property.Name] = property.Value.ToString();
                 }
+                table.Rows.Add(row);
             }
-
-            table.Rows.Add(lin);
         }
-         
+
         return table;
     }
+    
 }

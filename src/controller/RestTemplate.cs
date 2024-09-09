@@ -10,7 +10,7 @@ using System.Reflection;
 namespace DataConnect.Controller;
 public static class RestTemplate
 {
-    public static async Task<Result<dynamic, int>> TemplateRequestHandler(HttpContextBase ctx, string method, object?[] param)
+    public static async Task<Result<dynamic, int>> TemplateRequestHandler(HttpContextBase ctx, HttpSender httpSender, string method, object?[] param)
     {
         string res = "";
 
@@ -34,12 +34,10 @@ public static class RestTemplate
                 }
 
                 var req = result.Value;
-                using var client = new HttpClient();
-                using var tasker = new HttpSender(req.ConnectionInfo, client);
 
                 MethodInfo execute = typeof(HttpSender).GetMethod(method)!;
                 
-                dynamic jsonReturn = await Task<dynamic>.Factory.StartNew(() => execute.Invoke(tasker, param)!).Result;
+                dynamic jsonReturn = await Task<dynamic>.Factory.StartNew(() => execute.Invoke(httpSender, param)!).Result;
 
                 res = JsonSerializer.Serialize(new Response() {
                     Error = false,
