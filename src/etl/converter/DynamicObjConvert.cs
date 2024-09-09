@@ -1,6 +1,6 @@
 using System.Data;
 using System.Text.Json;
-using System.Text.Json.Nodes;
+
 
 namespace DataConnect.Etl.Converter;
 
@@ -10,49 +10,37 @@ public static class DynamicObjConvert
     {
         ArgumentNullException.ThrowIfNull(obj, nameof(obj));
 
+        string json = Convert.ToString(obj);
         var table = new DataTable();
 
-        // Deserialize once, instead of dynamically each time
-        JsonNode json = JsonSerializer.Deserialize<JsonObject>(obj);
-        JsonArray jsonList = json[prop]!.AsArray();
+        JsonDocument document = JsonDocument.Parse(json);
+        JsonElement root = document.RootElement.GetProperty(prop);
 
-        // Predefine columns (assuming the first row contains all keys)
-        if (jsonList.Count > 0)
+        if (root.ValueKind == JsonValueKind.Array)
         {
-            var firstRow = jsonList[0]!.AsObject();
-            foreach (var element in firstRow)
+            foreach (JsonElement element in root.EnumerateArray())
             {
-                table.Columns.Add(element!.Key);
+                if (table.Columns.Count == 0)
+                {
+                    foreach (JsonProperty property in element.EnumerateObject())
+                    {
+                        table.Columns.Add(property.Name);
+                    }
+                }
+
+                DataRow row = table.NewRow();
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (!table.Columns.Contains(property.Name)) {
+                        table.Columns.Add(property.Name);
+                    }
+                    row[property.Name] = property.Value.ToString();
+                }
+                table.Rows.Add(row);
             }
         }
 
-        table.BeginLoadData(); // Start bulk data load
-
-        // Process rows and populate the DataTable
-        foreach (var node in jsonList)
-        {
-            DataRow row = table.NewRow();
-
-            foreach (var element in node!.AsObject())
-            {
-                var value = element.Value ?? JsonNode.Parse($"\"\""); // Handle null values
-
-                if (value!.GetValueKind() != JsonValueKind.Array && value.GetValueKind() != JsonValueKind.Object)
-                {
-                    row[element.Key] = value.GetValue<string>(); // Adjust to specific types if necessary
-                }
-                else
-                {
-                    row[element.Key] = value.ToJsonString(); // Handle complex types as JSON strings
-                }
-            }
-
-            table.Rows.Add(row); // Add row to DataTable
-        }
-
-        table.EndLoadData(); // End bulk data load
-        
         return table;
     }
-
+    
 }

@@ -7,6 +7,7 @@ using System.Data;
 using WatsonWebserver.Core;
 using DataConnect.Models;
 using System.Threading.Channels;
+using DataConnect.Etl.Http;
 
 namespace DataConnect.Etl.Templates;
 
@@ -31,7 +32,7 @@ public static class ExtractTemplate
     /// <param name="apiAuthMethod">Nome do método que realizará a chamada à API.</param>
     /// <param name="database">Nome do banco de dados para extração.</param>
     public static async Task PaginatedApiToSqlDatabase(HttpContextBase ctx,
-                                                       HttpClient client,
+                                                       HttpSender sender,
                                                        string conStr,
                                                        BodyDefault obj,
                                                        DataTable table,
@@ -41,11 +42,12 @@ public static class ExtractTemplate
                                                        string apiAuthMethod,
                                                        string innerProp,
                                                        int threadTimeout,
+                                                       string uri,
                                                        string? database = null)
     {
         using var serverCall = new SqlServerCall(conStr);
         var options = new ParallelOptions { MaxDegreeOfParallelism = threadPagination };
-        var channel = Channel.CreateBounded<DataTable>(capacity: threadPagination);
+        var channel = Channel.CreateBounded<DataTable>(capacity: threadPagination * 2);
 
         var fetch = Task.Run(async () => {
             await Parallel.ForEachAsync(Enumerable.Range(1, pageCount), options, async (page, token) => {
@@ -54,8 +56,8 @@ public static class ExtractTemplate
                 do
                 {
                     res = await RestTemplate.TemplateRequestHandler(
-                        ctx, client, apiAuthMethod, 
-                        [listBuilder(page), System.Net.Http.HttpMethod.Post]
+                        ctx, sender, apiAuthMethod, 
+                        [listBuilder(page), System.Net.Http.HttpMethod.Post, uri]
                     );
 
                     if (!res.IsOk) Log.Out($"Error at page {page}, trying again. Attempt {attempt} - out of 5");

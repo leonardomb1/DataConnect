@@ -5,23 +5,27 @@ using WatsonWebserver.Core;
 using WatsonWebserver.Lite;
 using WatsonWebserver.Lite.Extensions.HostBuilderExtension;
 using DataConnect.Routes;
+using DataConnect.Etl.Http;
 
 namespace DataConnect.Controller;
 
-public class Server(int port, string conStr, string database, int threadPagination, int threadTimeout) : IDisposable
+public class Server(int port, string conStr, string database, int threadPagination, int threadTimeout, IHttpClientFactory clientFactory) : IDisposable
 {
     private bool _disposed;
     private readonly int _port = port;
     private readonly WebserverLite _server = new HostBuilder("*", port, false, NotFound)
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes)
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) => {
-                return StouApi.StouAssinaturaEspelho(ctx, conStr, database);
+                var httpSender = new HttpSender(clientFactory);
+                return StouApi.StouAssinaturaEspelho(ctx, conStr, database, httpSender);
             })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
-                return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout);
+                var httpSender = new HttpSender(clientFactory);
+                return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout, httpSender);
             })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) => {
-                return StouApi.StouBasic(ctx, conStr, database);
+                var httpSender = new HttpSender(clientFactory);
+                return StouApi.StouBasic(ctx, conStr, database, httpSender);
             })
             .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", GetRoutes)
             .Build();

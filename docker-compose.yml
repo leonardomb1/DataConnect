@@ -1,7 +1,6 @@
 services:
   runner:
-    image:
-      build: .
+    build: .
     network_mode: bridge
     ports:
       - "${PORT_TO_USE}:${PORT_TO_USE}"
