@@ -36,6 +36,7 @@ public class Program
         int packetSize = 0;
         string connection = "";
         string database = "";
+        string authSecret = "";
 
         if (!isCmd) {
             string[] envs = {
@@ -45,6 +46,7 @@ public class Program
                 "THREAD_PAGINATION",
                 "THREAD_TIMEOUT",
                 "PACKET_SIZE",
+                "AUTH_SECRET",
             };
 
             Dictionary<string, string?> config = envs.ToDictionary(
@@ -62,6 +64,7 @@ public class Program
             threadPagination = int.Parse(config[envs[3]]!);
             threadTimeout = int.Parse(config[envs[4]]!);
             packetSize = int.Parse(config[envs[5]]!);
+            authSecret = config[envs[6]]!;
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
@@ -76,21 +79,22 @@ public class Program
             threadPagination = int.Parse(args[4]);
             threadTimeout = int.Parse(args[5]);
             packetSize = int.Parse(args[6]);
+            authSecret = args[7];
         }
 
-        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout, packetSize).Build();
+        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout, packetSize, authSecret).Build();
         using var server = host.Services.GetRequiredService<Server>();
         server.Start();
         Console.Read();
     }
-    public static IHostBuilder CreateHostBuilder(string[] args, int port, string connection, string database, int threadPagination, int threadTimeout, int packetSize) =>
+    public static IHostBuilder CreateHostBuilder(string[] args, int port, string connection, string database, int threadPagination, int threadTimeout, int packetSize, string authSecret) =>
                 Host.CreateDefaultBuilder(args)
                     .ConfigureLogging(logging => {
                         logging.ClearProviders();
                     })
                     .ConfigureServices((_, services) =>
                         services.AddHttpClient()
-                                .AddSingleton(new Server(port, connection, database, threadPagination, threadTimeout, packetSize, "KaeferIT@BR78", services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
+                                .AddSingleton(new Server(port, connection, database, threadPagination, threadTimeout, packetSize, authSecret, services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
     private static void ShowHelp() 
     {
         ShowSignature();
