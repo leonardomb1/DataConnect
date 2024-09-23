@@ -1,29 +1,20 @@
-using DataConnect.Shared;
-using DataConnect.Etl.Sql;
-using DataConnect.Controller;
-using DataConnect.Etl.Converter;
-using WatsonWebserver.Core;
 using System.Data;
-using DataConnect.Types;
-using DataConnect.Models;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using WatsonWebserver.Core;
+using DataConnect.Etl.Sql;
+using DataConnect.Etl.Converter;
 using DataConnect.Etl.Templates;
 using DataConnect.Etl.Http;
+using DataConnect.Models;
+using DataConnect.Shared;
+using DataConnect.Controller;
+using DataConnect.Types;
 
 namespace DataConnect.Routes;
 
 public static class StouApi
 {
-    /// <summary>
-    /// Método que encapsula a rota "ponto_espelho" da API da STOU. É uma API paginada, portanto, é
-    /// necessário realizar requisições em diversas threads para ter ganho de processamento.
-    /// </summary>
-    /// <param name="ctx">Contexto da conexão com cliente.</param>
-    /// <param name="conStr">Cadeia de conexão com servidor SQL.</param>
-    /// <param name="database">Banco de dados de extração.</param>
-    /// <param name="threadPagination">Limite de requisições simultâneas de páginas da API.</param>
-    /// <returns></returns>
     public static async Task<int> StouEspelho(HttpContextBase ctx,
                                               string conStr,
                                               string database,
@@ -33,8 +24,9 @@ public static class StouApi
     {
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
-          var requestBody = request.Value;
-
+        
+        using var requestBody = request.Value;
+        
         if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
             return Constants.MethodFail;
         
@@ -74,7 +66,7 @@ public static class StouApi
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
         const string ApiAuthMethod = "SimpleAuthBodyRequestAsync";
         const string InnerProp = "itens";
-        await ExtractTemplate.PaginatedApiToSqlDatabase(
+        await PaginatedExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
             sender,
             conStr,
@@ -108,7 +100,7 @@ public static class StouApi
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
         
-        var requestBody = request.Value;
+        using var requestBody = request.Value;
 
         if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
             return Constants.MethodFail;
@@ -151,7 +143,7 @@ public static class StouApi
         Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
         if (!request.IsOk) return Constants.MethodFail;
         
-        var requestBody = request.Value;
+        using var requestBody = request.Value;
 
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n"
@@ -183,15 +175,6 @@ public static class StouApi
         return Constants.MethodSuccess; 
     }
 
-    /// <summary>
-    /// Método para construção de requisição paginada das APIs da STOU.
-    /// Token de autenticação segue lógica de hash: string dada por STOU + Data Atual, em SHA256.
-    /// </summary>
-    /// <param name="options">Opções de envio dinâmicas, utilizado para autenticação</param>
-    /// <param name="destinationTableName">Normalmente é o nome do WebService.</param>
-    /// <param name="filteredDate">Data de Corte</param>
-    /// <param name="page">Paginação da API</param>
-    /// <returns>Lista chaves e valores para construção de JSON</returns>
     private static List<KeyValuePair<string, string>> BuildPayload(string[] options,
                                                                    string destinationTableName,
                                                                    string filteredDate,

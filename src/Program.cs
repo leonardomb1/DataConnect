@@ -33,6 +33,7 @@ public class Program
         int port = 0;
         int threadTimeout = 0;
         int threadPagination = 0;
+        int packetSize = 0;
         string connection = "";
         string database = "";
 
@@ -43,6 +44,7 @@ public class Program
                 "EXPORT_DATABASE",
                 "THREAD_PAGINATION",
                 "THREAD_TIMEOUT",
+                "PACKET_SIZE",
             };
 
             Dictionary<string, string?> config = envs.ToDictionary(
@@ -59,10 +61,11 @@ public class Program
             database = config[envs[2]]!;
             threadPagination = int.Parse(config[envs[3]]!);
             threadTimeout = int.Parse(config[envs[4]]!);
+            packetSize = int.Parse(config[envs[5]]!);
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
-                    "Expected:  -e  <port> <connection> <database> <thread timeout>"
+                    "Expected:  -e  <port> <connection> <database> <thread timeout> <packet size>"
                 );
                 return;
             }
@@ -72,21 +75,22 @@ public class Program
             database = args[3];
             threadPagination = int.Parse(args[4]);
             threadTimeout = int.Parse(args[5]);
+            packetSize = int.Parse(args[6]);
         }
 
-        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout).Build();
+        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout, packetSize).Build();
         using var server = host.Services.GetRequiredService<Server>();
         server.Start();
         Console.Read();
     }
-    public static IHostBuilder CreateHostBuilder(string[] args, int port, string connection, string database, int threadPagination, int threadTimeout) =>
+    public static IHostBuilder CreateHostBuilder(string[] args, int port, string connection, string database, int threadPagination, int threadTimeout, int packetSize) =>
                 Host.CreateDefaultBuilder(args)
                     .ConfigureLogging(logging => {
                         logging.ClearProviders();
                     })
                     .ConfigureServices((_, services) =>
                         services.AddHttpClient()
-                                .AddSingleton(new Server(port, connection, database, threadPagination, threadTimeout, services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
+                                .AddSingleton(new Server(port, connection, database, threadPagination, threadTimeout, packetSize, "KaeferIT@BR78", services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
     private static void ShowHelp() 
     {
         ShowSignature();
@@ -97,7 +101,7 @@ public class Program
             "   -v --version   Show version information\n" +
             "   -e --environment    <port> <connection>   Use configuration variables\n\n" +
             "Example:\n" +
-            "   DataConnect -e <port> <connection> <database> <threads> <thread timeout>"
+            "   DataConnect -e <port> <connection> <database> <threads> <thread timeout> <packet size>"
         );
     }
 
@@ -110,8 +114,7 @@ public class Program
     private static void ShowSignature() 
     {
         Console.WriteLine(
-            "Developed by Leonardo M. Baptista\n" +
-            "Licensed under the MIT License. see LICENSE file for details.\n"
+            "Developed by Leonardo M. Baptista\n"
         );
     }
 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using DataConnect.Models;
 using DataConnect.Types;
 using DataConnect.Shared;
+using WatsonWebserver.Core;
 
 namespace DataConnect.Validator;
 
@@ -18,6 +19,10 @@ public static class RequestValidate
             return Constants.MethodFail;
         }
     }
+
+    public static bool ContainsCorrectHeader(HttpContextBase ctx, string[] headers) => 
+        headers.Select(ctx.Request.HeaderExists).All(x => x == true);
+    
     public static bool IsValidJson(dynamic json)
     {
         string value = Convert.ToString(json);

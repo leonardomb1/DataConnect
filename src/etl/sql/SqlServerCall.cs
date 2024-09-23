@@ -1,5 +1,6 @@
 using System.Data;
 using DataConnect.Shared;
+using DataConnect.Types;
 using Microsoft.Data.SqlClient;
 
 namespace DataConnect.Etl.Sql;
@@ -15,11 +16,7 @@ public class SqlServerCall(string conStr) : IDisposable
                                     string? database = null)
     {
         GetConnection();
-        
-        if (database != null) 
-        {
-            _connection.ChangeDatabase(database);
-        }
+        await ChangeDatabase(database);
         
         using SqlBulkCopy bulkCopy = new(_connection) 
         {
@@ -35,7 +32,7 @@ public class SqlServerCall(string conStr) : IDisposable
             Log.Out($"Error while attempting insert: {ex.Message}");
             return Constants.MethodFail;
         } finally {
-            _connection.Close();
+            EndConnection();
         }
     }
 
@@ -44,9 +41,10 @@ public class SqlServerCall(string conStr) : IDisposable
                                   string sysName,
                                   string? database = null)
     {
-        if (!IsCreated(tableName, database))
+        if (!await IsCreated(tableName, database))
         {
             GetConnection();
+            await ChangeDatabase(database);
             
             Log.Out($"Failed to find table {sysName.ToUpper()}.{tableName.ToUpper()}, proceeding with creation...");
             using SqlCommand cmd = new("", _connection);
@@ -64,105 +62,163 @@ public class SqlServerCall(string conStr) : IDisposable
         } else {
             Log.Out($"Table {tableName.ToUpper()} already exists.");
         }
-        _connection.Close();
+        EndConnection();
     }
 
-    public DataTable GetTableFromServer(string database, SqlCommand cmd, string[]? options = null)
+    public async Task<DataTable> GetTableDataFromServer(string query, string? database = null)
     {
         GetConnection();
+        await ChangeDatabase(database);
 
-        if (database != null)
-        {
-            _connection.ChangeDatabase(database);
-        }      
+        DataTable data = new();
 
-        DataTable data = new() {
-            TableName = options?[0] ?? "Table"
+        using SqlCommand cmd = new() {
+            Connection = _connection,
+            CommandText = query
         };
 
-        using SqlDataAdapter adapter = new(cmd);
-        adapter.Fill(data);
+        var reader = await cmd.ExecuteReaderAsync();
 
-        _connection.Close();
+        data.Load(reader);
 
+        EndConnection();
         return data;
     }
 
-    public void ExecuteCommand(SqlCommand cmd)
+    public async Task ExecuteCommand(SqlCommand cmd, bool stayAlive = false, string? database = null)
     {
         GetConnection();
-        cmd.ExecuteNonQuery();
-        _connection.Close();
-    }
+        await ChangeDatabase(database);     
 
-    public void CleanDestination(string sysName, string tableName, object[] options, string stmt)
-    {
-        GetConnection();
+        cmd.Connection = _connection;
 
-        using SqlCommand cmd = new() {
-            Connection = _connection
-        };
-
-        int lineCount = GetLineCount(sysName, tableName);
-
-        switch (lineCount, options[0])
-        {
-            case (> 0, Constants.Incremental):
-                cmd.CommandText = stmt;
-                cmd.Parameters.AddWithValue("@NOMEIND", options[1]);
-                cmd.Parameters.AddWithValue("@TABELA", options[2]);
-                cmd.Parameters.AddWithValue("@VL_CORTE", options[3].ToString());
-                cmd.Parameters.AddWithValue("@COL_DT", options[4]);
-                cmd.ExecuteNonQuery();
-
-                Log.Out($"Table {tableName}");
-                break;
-            case (0, Constants.Incremental):
-                cmd.CommandText = $"TRUNCATE TABLE {sysName}.{tableName};";
-                cmd.ExecuteNonQuery();
-                break;            
-            case (_, Constants.Total):
-                cmd.CommandText = $"TRUNCATE TABLE {sysName}.{tableName};";
-                cmd.ExecuteNonQuery();
-                break;
-            default:
-                break;
+        try {
+            await cmd.ExecuteNonQueryAsync();
         }
-
-        cmd.ExecuteNonQuery();
-
-        _connection.Close();
+        catch (Exception ex)
+        {      
+            Log.Out($"Error while executing command: {ex.Message}, command text: {cmd.CommandText}");
+        }
+        finally {
+            if (!stayAlive) EndConnection();
+        }
     }
-    private int GetLineCount(string sysName, string tableName)
+
+    public async Task<Result<dynamic, int>> ReadPacketFromServer(string query,
+                                                                 int packetSize,
+                                                                 string tableName,
+                                                                 string sysName,
+                                                                 SqlServerCall homeServer,
+                                                                 bool stayAlive = false,
+                                                                 string? database = null)
     {
         GetConnection();
+        
+        using SqlDataReader reader = new SqlCommand() {
+            CommandText = query,
+            Connection = _connection
+        }.ExecuteReader();
+
+        using var table = new DataTable();
+
+        try
+        {
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
+            }
+
+            while (reader.ReadAsync().Result)
+            {
+                DataRow row = table.NewRow();
+                for (int i = 0; i < reader.FieldCount; i++)
+                {
+                    row[i] = reader.GetValue(i);
+                }
+                table.Rows.Add(row);
+            
+                if (table.Rows.Count >= packetSize)
+                {
+                    await BulkInsert(table, tableName, sysName, database);
+                    table.Clear();
+                }
+            }
+
+            if (table.Rows.Count > 0) {
+                await homeServer.BulkInsert(table, tableName, sysName, database);
+            }
+            return Constants.MethodSuccess;
+        }
+        catch (Exception ex)
+        {
+            Log.Out($"Error while attempting insert: {ex.Message}");
+            return Constants.MethodFail;
+        } finally {
+            if (reader!= null &&!reader.IsClosed)
+            {
+                reader.Close();
+            }
+            if (!stayAlive) EndConnection();
+        }
+    }
+
+    public async Task<Result<int, dynamic>> GetScalarDataFromServer(string query, bool stayAlive = false, string? database = null)
+    {
+        GetConnection();
+        await ChangeDatabase(database);
 
         using SqlCommand cmd = new() {
-            CommandText = $"SELECT COUNT(1) FROM {sysName.ToUpper()}.{tableName.ToUpper()} WITH(NOLOCK);",
+            CommandText = query,
             Connection = _connection
         };
 
-        var ret = cmd.ExecuteScalar() ?? "0";
-
-        _connection.Close();
-        return int.Parse(cmd.ToString()!);
+        try {
+            var ret = await cmd.ExecuteScalarAsync() ?? "0";
+            return int.Parse(ret.ToString()!);
+        }
+        catch (Exception ex)
+        {      
+            Log.Out($"Error while fetching data from server: {ex.Message}, command text: {cmd.CommandText}");
+            return Constants.MethodFail;
+        }
+        finally {
+            if (!stayAlive) EndConnection();
+        }
     }
 
     private void GetConnection()
     {
-        if (_connection.State != ConnectionState.Open) {
-            _connection.Open();
+        try
+        {
+            if (_connection.State != ConnectionState.Open && _connection.State != ConnectionState.Connecting) {
+                _connection.Open();
+            }   
+        }
+        catch (Exception ex)
+        {
+            Log.Out($"Error while attempting to open a connection, error: {ex}");
         }
     }
 
-    private bool IsCreated(string tableName, string? database = null)
+    private void EndConnection()
+    {
+        if (_connection.State == ConnectionState.Open) {
+            _connection.Close();
+        }
+    }
+
+    private async Task ChangeDatabase(string? database = null)
+    {
+        if (database != null)
+        {
+            await _connection.ChangeDatabaseAsync(database);
+        }  
+    }
+
+    private async Task<bool> IsCreated(string tableName, string? database = null)
     {
         GetConnection();
-
-        if (database != null) 
-        {
-            _connection.ChangeDatabase(database);
-        }        
+        await ChangeDatabase(database);      
 
         using SqlCommand cmd = new() {
             CommandText = $"SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName.ToUpper()}'",
@@ -170,8 +226,8 @@ public class SqlServerCall(string conStr) : IDisposable
         };
 
         var ret = cmd.ExecuteScalar() ?? "0";
-        _connection.Close();
 
+        EndConnection();
         return int.Parse(ret.ToString()!) == Constants.MethodSuccess;
     }
 

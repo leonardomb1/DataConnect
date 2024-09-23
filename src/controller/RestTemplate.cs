@@ -7,7 +7,7 @@ using DataConnect.Types;
 using WatsonWebserver.Core;
 using System.Reflection;
 
-namespace DataConnect.Controller;
+    namespace DataConnect.Controller;
 public static class RestTemplate
 {
     public static async Task<Result<dynamic, int>> TemplateRequestHandler(HttpContextBase ctx, HttpSender httpSender, string method, object?[] param)
@@ -87,7 +87,6 @@ public static class RestTemplate
         var attempt = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
 
         if (attempt.IsOk) {
-            
             return attempt.Value;
         } else {
             string res = JsonSerializer.Serialize(new Response() {
