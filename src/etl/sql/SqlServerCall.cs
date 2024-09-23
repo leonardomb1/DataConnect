@@ -97,7 +97,7 @@ public class SqlServerCall(string conStr) : IDisposable
         }
         catch (Exception ex)
         {      
-            Log.Out($"Error while executing command: {ex.Message}, command text: {cmd.CommandText}");
+            Log.Out($"Error while executing command: {ex.Message}");
         }
         finally {
             if (!stayAlive) EndConnection();
@@ -109,6 +109,8 @@ public class SqlServerCall(string conStr) : IDisposable
                                                                  string tableName,
                                                                  string sysName,
                                                                  SqlServerCall homeServer,
+                                                                 int executionId,
+                                                                 int extractionId,
                                                                  bool stayAlive = false,
                                                                  string? database = null)
     {
@@ -151,7 +153,13 @@ public class SqlServerCall(string conStr) : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Out($"Error while attempting insert: {ex.Message}");
+            await Log.ToServer(
+                $"Error while attempting insert: {ex.Message}",
+                executionId,
+                extractionId,
+                Constants.LogErrorExecute,
+                homeServer
+            );
             return Constants.MethodFail;
         } finally {
             if (reader!= null &&!reader.IsClosed)

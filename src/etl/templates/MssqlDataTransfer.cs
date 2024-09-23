@@ -3,6 +3,7 @@ using DataConnect.Models;
 using DataConnect.Shared;
 using Microsoft.Data.SqlClient;
 using System.Data;
+using System.Reflection.Metadata;
 
 namespace DataConnect.Etl.Templates;
 
@@ -15,6 +16,8 @@ public static class MssqlDataTransfer
                                           int packetSize)
     {
         List<Task> tasks = [];
+        int errCount = 0;
+
 
         using SqlServerCall homeServerCall = new(conStr);
         var options = new ParallelOptions { MaxDegreeOfParallelism = threadPagination };
@@ -69,44 +72,28 @@ public static class MssqlDataTransfer
                 $"SELECT COUNT(1) FROM {metadata[i].SystemName}.{metadata[i].TableName} WITH(NOLOCK);", 
                 stayAlive:true
             ).Result.Value;
-
-            string createTempQuery = queryData
-                .Where(any => any.QueryType == metadata[i].TableType)
-                .Select(x => x.QueryText).FirstOrDefault()!; 
-
-            string cleanDestinationQuery = queryData
-                .Where(any => any.QueryType == Constants.Delete)
-                .Select(x => x.QueryText).FirstOrDefault()!;
-
-            using var createTemp = new SqlCommand() {
-                CommandText = createTempQuery
-            };
-
-            using var cleanDestination = new SqlCommand() {
-                CommandText = cleanDestinationQuery 
-            };
         
             await localRemoteCall.ExecuteCommand(
                 AddParameter(
-                    createTemp, 
+                    queryData,
+                    metadata[i].TableType, 
                     lineCount, 
                     metadata[i].TableName, 
                     metadata[i].LookBackValue, 
-                    metadata[i].ColumnName, 
-                    metadata[i].TableType
+                    metadata[i].ColumnName
                 ),
                 stayAlive:true
             );
 
             await localHomeCall.ExecuteCommand(
                 BuildCommandWithDelete(
-                    cleanDestination,
+                    queryData,
+                    metadata[i].TableType,
                     lineCount, 
                     metadata[i].TableName, 
                     metadata[i].IndexName!, 
                     metadata[i].LookBackValue, 
                     metadata[i].ColumnName, 
-                    metadata[i].TableType,
                     metadata[i].SystemName
                 ),
                 stayAlive:true
@@ -118,45 +105,54 @@ public static class MssqlDataTransfer
                 metadata[i].TableName,
                 metadata[i].SystemName,
                 localHomeCall,
+                executionId,
+                metadata[i].ExtractId,
                 stayAlive:true
             );
-
-            if (!reader.IsOk) {
-                await Log.ToServer(
-                    "Error occurred while attempting to read data from server.",
-                    executionId,
-                    metadata[i].ExtractId,
-                    Constants.LogErrorExecute,
-                    localHomeCall
-                );
-            }
-
+            
             Log.Out("Finished reading data from server, proceeding with temp table removal.");
 
             await localRemoteCall.ExecuteCommand(
                 new SqlCommand($"DROP TABLE IF EXISTS ##T_{metadata[i].TableName}_DW_SEL")
             );
 
-            await Log.ToServer(
-                $"Table {metadata[i].SystemName}.{metadata[i].TableName} extraction has been completed.", 
-                executionId, 
-                metadata[i].ExtractId, 
-                Constants.LogEndExecute, 
-                localHomeCall
-            );
+            if (!reader.IsOk) {
+                Log.Out("Error while attempting to send data to server.");
+                errCount++;            
+            } else {
+                await Log.ToServer(
+                    $"Table {metadata[i].SystemName}.{metadata[i].TableName} extraction has been completed.", 
+                    executionId, 
+                    metadata[i].ExtractId, 
+                    Constants.LogEndExecute, 
+                    localHomeCall
+                );
+            }
         });
 
+        if (errCount > 0) return Constants.MethodFail;
+        
         return Constants.MethodSuccess;
     }
 
-    private static SqlCommand AddParameter(SqlCommand command, int lineCount, string tableName, int? lookBackValue, string? columnName, char type)
+    private static SqlCommand AddParameter(List<QueryMetadata> queryData, char tableType, int lineCount, string tableName, int? lookBackValue, string? columnName)
     {
-        switch ((lineCount, type))
+        var command = new SqlCommand() {
+            CommandText = queryData
+                .Where(any => any.QueryType == tableType)
+                .Select(x => x.QueryText).FirstOrDefault()!
+        };
+
+        switch ((lineCount, tableType))
         {
             case (_, Constants.Total):
                 command.Parameters.AddWithValue("@TABELA", tableName);
                 break;
             case (0, Constants.Incremental):
+                command.CommandText = queryData
+                    .Where(any => any.QueryType == Constants.Total)
+                    .Select(x => x.QueryText).FirstOrDefault()!;
+
                 command.Parameters.AddWithValue("@TABELA", tableName);
                 break;
             case (> 0, Constants.Incremental):
@@ -171,9 +167,15 @@ public static class MssqlDataTransfer
         return command;
     }
 
-    private static SqlCommand BuildCommandWithDelete(SqlCommand command, int lineCount, string tableName, string indexName, int? lookBackValue, string? columnName, char type, string sysName)
+    private static SqlCommand BuildCommandWithDelete(List<QueryMetadata> queryData, char tableType, int lineCount, string tableName, string indexName, int? lookBackValue, string? columnName, string sysName)
     {
-        switch ((lineCount, type))
+        var command = new SqlCommand() {
+            CommandText = queryData
+                .Where(any => any.QueryType == Constants.Delete)
+                .Select(x => x.QueryText).FirstOrDefault()!
+        };
+
+        switch ((lineCount, tableType))
         {
             case (_, Constants.Total):
                 command.CommandText = $"TRUNCATE TABLE {sysName}.{tableName};";
