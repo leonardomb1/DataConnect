@@ -68,7 +68,7 @@ public class Program
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
-                    "Expected:  -e  <port> <connection> <database> <thread timeout> <packet size>"
+                    "Expected:  -e [Options]"
                 );
                 return;
             }
@@ -103,10 +103,10 @@ public class Program
             "Options:\n" +
             "   -h --help      Show this help message\n" +
             "   -v --version   Show version information\n" +
-            "   -e --environment    <port> <connection>   Use configuration variables\n\n" +
-            "Example:\n" +
-            "   DataConnect -e <port> <connection> <database> <threads> <thread timeout> <packet size>"
-        );
+            "   -e --environment    [Options]  Use configuration variables\n\n" +
+            "   [Options]: \n" +
+            "   Port, ConnectionString, ExportDB, ThreadPagination, ThreadTimeout, PacketSize, AuthSecret"
+            );
     }
 
     private static void ShowVersion() 
