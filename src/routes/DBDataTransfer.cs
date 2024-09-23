@@ -4,6 +4,7 @@ using DataConnect.Models;
 using DataConnect.Controller;
 using WatsonWebserver.Core;
 using DataConnect.Etl.Templates;
+using System.Text.Json;
 
 namespace DataConnect.Routes;
 
@@ -22,9 +23,32 @@ public static class DBDataTransfer
         if (!int.TryParse(requestBody.Options[1], out int systemId)) 
             return Constants.MethodFail;
 
-        await MssqlDataTransfer.ExchangeData(conStr, scheduleId, systemId, threadPagination, packetSize);
+        var exchange = await MssqlDataTransfer.ExchangeData(conStr, scheduleId, systemId, threadPagination, packetSize);
 
-        
-        return Constants.MethodSuccess;
+        if (exchange != Constants.MethodFail) {      
+            string res = JsonSerializer.Serialize(new Response() {
+                Error = false,
+                Message = "The schedule ran successfully in the server.",
+                Status = 201,
+                Options = []
+            });
+
+            ctx.Response.StatusCode = 201;
+            await ctx.Response.Send(res);
+            
+            return Constants.MethodSuccess;
+        } else {
+            string res = JsonSerializer.Serialize(new Response() {
+                Error = true,
+                Message = "The schedule has failed in the server.",
+                Status = 501,
+                Options = []
+            });
+
+            ctx.Response.StatusCode = 501;
+            await ctx.Response.Send(res);
+            
+            return Constants.MethodFail;
+        }
     }
 }
