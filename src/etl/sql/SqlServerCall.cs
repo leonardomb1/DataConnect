@@ -104,7 +104,7 @@ public class SqlServerCall(string conStr) : IDisposable
         }
     }
 
-    public async Task<Result<dynamic, int>> ReadPacketFromServer(string query,
+    public async Task<Result<int, dynamic>> ReadPacketFromServer(string query,
                                                                  int packetSize,
                                                                  string tableName,
                                                                  string sysName,
