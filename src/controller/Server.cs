@@ -3,32 +3,48 @@ using DataConnect.Shared;
 using DataConnect.Models;
 using WatsonWebserver.Core;
 using WatsonWebserver.Lite;
-using WatsonWebserver.Lite.Extensions.HostBuilderExtension;
 using DataConnect.Routes;
 using DataConnect.Etl.Http;
 
 namespace DataConnect.Controller;
 
-public class Server(int port, string conStr, string database, int threadPagination, int threadTimeout, IHttpClientFactory clientFactory) : IDisposable
+public class Server : IDisposable
 {
     private bool _disposed;
-    private readonly int _port = port;
-    private readonly WebserverLite _server = new HostBuilder("*", port, false, NotFound)
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes)
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) => {
-                var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouAssinaturaEspelho(ctx, conStr, database, httpSender);
-            })
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
+    private readonly int _port;
+    private readonly bool _ssl = false;
+    private readonly WebserverLite _server;
+
+    public Server(int port,
+                  string conStr,
+                  string database,
+                  int threadPagination,
+                  int threadTimeout,
+                  int packetSize,
+                  string authSecret,
+                  IHttpClientFactory clientFactory)
+    {
+        _port = port;
+
+        _server = new WebserverLite(new WebserverSettings("*", _port, _ssl), NotFound);
+        _server.Routes.AuthenticateRequest = (HttpContextBase ctx) => Authenticate(ctx, authSecret);
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes);
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
                 var httpSender = new HttpSender(clientFactory);
                 return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout, httpSender);
-            })
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) => {
+        });
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) => {
                 var httpSender = new HttpSender(clientFactory);
                 return StouApi.StouBasic(ctx, conStr, database, httpSender);
-            })
-            .MapStaticRoute(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", GetRoutes)
-            .Build();
+        });
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) => {
+                var httpSender = new HttpSender(clientFactory);
+                return StouApi.StouAssinaturaEspelho(ctx, conStr, database, httpSender);
+        });
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", async (HttpContextBase ctx) => {
+                await DBDataTransfer.ScheduledMssql(ctx, conStr, threadPagination, packetSize);
+        });
+    }
 
     public void Start()
     {
@@ -54,6 +70,28 @@ public class Server(int port, string conStr, string database, int threadPaginati
         await ctx.Response.Send(res);
         
         Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
+    }
+
+    public static async Task Authenticate(HttpContextBase ctx, string authSecret)
+    {
+        string token = ctx.Request.Headers.GetValues("token")![0];
+        string validate = Encryption.Sha256(authSecret + $"{DateTime.Today:dd/MM/yyyy}");
+
+        if (token != validate) await NotAuthorized(ctx);
+    }
+
+    private static async Task NotAuthorized(HttpContextBase ctx)
+    {
+        string res = JsonSerializer.Serialize(new Response() {
+            Error = true,
+            Status = 401,
+            Message = "Not Authorized",
+            Options = []
+        });
+
+        ctx.Response.StatusCode = 401;
+        await ctx.Response.Send(res);
+        Log.Out($"Unauthorized request by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}.");
     }
 
     private static async Task GetRoutes(HttpContextBase ctx) 
