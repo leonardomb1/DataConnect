@@ -114,8 +114,8 @@ public class SqlServerCall : IDisposable
         };
 
         using var reader = await cmd.ExecuteReaderAsync();
-
         using var table = new DataTable();
+        int glCount = 0;
 
         try
         {
@@ -126,15 +126,29 @@ public class SqlServerCall : IDisposable
 
             while (reader.ReadAsync().Result)
             {
+                glCount++;
                 DataRow row = table.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
                 {
                     row[i] = reader.GetValue(i);
                 }
                 table.Rows.Add(row);
-            
+                
+                if (glCount == 10000) {
+                    Log.Out(
+                        $"Reading data from packet array:\n" +
+                        $"  - Current table line count {table.Rows.Count} lines."
+                    );
+
+                    glCount = 0;
+                }
+
                 if (table.Rows.Count >= packetSize)
                 {
+                    Log.Out(
+                        $"Inserting data from packet array:\n" +
+                        $"  - Current table line count {table.Rows.Count} lines."
+                    );
                     await homeServer.BulkInsert(table, tableName, sysName, database);
                     table.Clear();
                 }
