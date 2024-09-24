@@ -136,8 +136,8 @@ public class SqlServerCall : IDisposable
                 
                 if (glCount == 10000) {
                     Log.Out(
-                        $"Reading data from packet array:\n" +
-                        $"  - Current table line count {table.Rows.Count} lines."
+                        $"Reading packet data from reader array:\n" +
+                        $"  - Current table {sysName}.{tableName} line count: {table.Rows.Count} lines."
                     );
 
                     glCount = 0;
@@ -146,8 +146,8 @@ public class SqlServerCall : IDisposable
                 if (table.Rows.Count >= packetSize)
                 {
                     Log.Out(
-                        $"Inserting data from packet array:\n" +
-                        $"  - Current table line count {table.Rows.Count} lines."
+                        $"Inserting packet data from reader array:\n" +
+                        $"  - Current table {sysName}.{tableName} line count: {table.Rows.Count} lines."
                     );
                     await homeServer.BulkInsert(table, tableName, sysName, database);
                     table.Clear();
