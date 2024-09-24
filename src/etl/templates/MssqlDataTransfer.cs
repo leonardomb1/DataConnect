@@ -3,7 +3,6 @@ using DataConnect.Models;
 using DataConnect.Shared;
 using Microsoft.Data.SqlClient;
 using System.Data;
-using System.Reflection.Metadata;
 
 namespace DataConnect.Etl.Templates;
 
@@ -27,7 +26,6 @@ public static class MssqlDataTransfer
             INSERT INTO DW_EXECUCAO (ID_DW_AGENDADOR)
             OUTPUT INSERTED.ID_DW_EXECUCAO
             VALUES ({scheduleId});",
-            stayAlive:false,
             "DWController"
         ).Result.Value;
 
@@ -56,6 +54,8 @@ public static class MssqlDataTransfer
             )
         );
 
+        homeServerCall.Dispose();
+
         await Parallel.ForEachAsync(Enumerable.Range(0, metadata.Count), options, async (i, token) => {
             using var localHomeCall = new SqlServerCall(conStr);
             using var localRemoteCall = new SqlServerCall(metadata[0].ConnectionString);
@@ -69,8 +69,7 @@ public static class MssqlDataTransfer
             );
 
             int lineCount = localHomeCall.GetScalarDataFromServer(
-                $"SELECT COUNT(1) FROM {metadata[i].SystemName}.{metadata[i].TableName} WITH(NOLOCK);", 
-                stayAlive:true
+                $"SELECT COUNT(1) FROM {metadata[i].SystemName}.{metadata[i].TableName} WITH(NOLOCK);"
             ).Result.Value;
         
             await localRemoteCall.ExecuteCommand(
@@ -81,8 +80,7 @@ public static class MssqlDataTransfer
                     metadata[i].TableName, 
                     metadata[i].LookBackValue, 
                     metadata[i].ColumnName
-                ),
-                stayAlive:true
+                )
             );
 
             await localHomeCall.ExecuteCommand(
@@ -95,8 +93,7 @@ public static class MssqlDataTransfer
                     metadata[i].LookBackValue, 
                     metadata[i].ColumnName, 
                     metadata[i].SystemName
-                ),
-                stayAlive:true
+                )
             );
 
             var reader = await localRemoteCall.ReadPacketFromServer(
@@ -106,8 +103,7 @@ public static class MssqlDataTransfer
                 metadata[i].SystemName,
                 localHomeCall,
                 executionId,
-                metadata[i].ExtractId,
-                stayAlive:true
+                metadata[i].ExtractId
             );
             
             Log.Out("Finished reading data from server, proceeding with temp table removal.");

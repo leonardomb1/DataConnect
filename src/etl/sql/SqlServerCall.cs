@@ -5,17 +5,22 @@ using Microsoft.Data.SqlClient;
 
 namespace DataConnect.Etl.Sql;
 
-public class SqlServerCall(string conStr) : IDisposable
+public class SqlServerCall : IDisposable
 {
     private bool _disposed;
-    private readonly SqlConnection _connection = new(conStr);
+    private readonly SqlConnection _connection;
+
+    public SqlServerCall(string conStr)
+    {
+        _connection = new SqlConnection(conStr);
+        _connection.Open();
+    }
 
     public async Task<int> BulkInsert(DataTable table,
                                     string tableName,
                                     string sysName,
                                     string? database = null)
     {
-        GetConnection();
         await ChangeDatabase(database);
         
         using SqlBulkCopy bulkCopy = new(_connection) 
@@ -31,8 +36,6 @@ public class SqlServerCall(string conStr) : IDisposable
         } catch (SqlException ex) {
             Log.Out($"Error while attempting insert: {ex.Message}");
             return Constants.MethodFail;
-        } finally {
-            EndConnection();
         }
     }
 
@@ -43,7 +46,6 @@ public class SqlServerCall(string conStr) : IDisposable
     {
         if (!await IsCreated(tableName, database))
         {
-            GetConnection();
             await ChangeDatabase(database);
             
             Log.Out($"Failed to find table {sysName.ToUpper()}.{tableName.ToUpper()}, proceeding with creation...");
@@ -62,12 +64,10 @@ public class SqlServerCall(string conStr) : IDisposable
         } else {
             Log.Out($"Table {tableName.ToUpper()} already exists.");
         }
-        EndConnection();
     }
 
     public async Task<DataTable> GetTableDataFromServer(string query, string? database = null)
     {
-        GetConnection();
         await ChangeDatabase(database);
 
         DataTable data = new();
@@ -81,13 +81,11 @@ public class SqlServerCall(string conStr) : IDisposable
 
         data.Load(reader);
 
-        EndConnection();
         return data;
     }
 
-    public async Task ExecuteCommand(SqlCommand cmd, bool stayAlive = false, string? database = null)
+    public async Task ExecuteCommand(SqlCommand cmd, string? database = null)
     {
-        GetConnection();
         await ChangeDatabase(database);     
 
         cmd.Connection = _connection;
@@ -99,9 +97,6 @@ public class SqlServerCall(string conStr) : IDisposable
         {      
             Log.Out($"Error while executing command: {ex.Message}");
         }
-        finally {
-            if (!stayAlive) EndConnection();
-        }
     }
 
     public async Task<Result<int, dynamic>> ReadPacketFromServer(string query,
@@ -111,15 +106,14 @@ public class SqlServerCall(string conStr) : IDisposable
                                                                  SqlServerCall homeServer,
                                                                  int executionId,
                                                                  int extractionId,
-                                                                 bool stayAlive = false,
                                                                  string? database = null)
     {
-        GetConnection();
-        
-        using SqlDataReader reader = new SqlCommand() {
+        using var cmd = new SqlCommand() {
             CommandText = query,
             Connection = _connection
-        }.ExecuteReader();
+        };
+
+        using var reader = await cmd.ExecuteReaderAsync();
 
         using var table = new DataTable();
 
@@ -141,7 +135,7 @@ public class SqlServerCall(string conStr) : IDisposable
             
                 if (table.Rows.Count >= packetSize)
                 {
-                    await BulkInsert(table, tableName, sysName, database);
+                    await homeServer.BulkInsert(table, tableName, sysName, database);
                     table.Clear();
                 }
             }
@@ -166,13 +160,11 @@ public class SqlServerCall(string conStr) : IDisposable
             {
                 reader.Close();
             }
-            if (!stayAlive) EndConnection();
         }
     }
 
-    public async Task<Result<int, dynamic>> GetScalarDataFromServer(string query, bool stayAlive = false, string? database = null)
+    public async Task<Result<int, dynamic>> GetScalarDataFromServer(string query, string? database = null)
     {
-        GetConnection();
         await ChangeDatabase(database);
 
         using SqlCommand cmd = new() {
@@ -189,30 +181,6 @@ public class SqlServerCall(string conStr) : IDisposable
             Log.Out($"Error while fetching data from server: {ex.Message}, command text: {cmd.CommandText}");
             return Constants.MethodFail;
         }
-        finally {
-            if (!stayAlive) EndConnection();
-        }
-    }
-
-    private void GetConnection()
-    {
-        try
-        {
-            if (_connection.State != ConnectionState.Open && _connection.State != ConnectionState.Connecting) {
-                _connection.Open();
-            }   
-        }
-        catch (Exception ex)
-        {
-            Log.Out($"Error while attempting to open a connection, error: {ex}");
-        }
-    }
-
-    private void EndConnection()
-    {
-        if (_connection.State == ConnectionState.Open) {
-            _connection.Close();
-        }
     }
 
     private async Task ChangeDatabase(string? database = null)
@@ -225,7 +193,6 @@ public class SqlServerCall(string conStr) : IDisposable
 
     private async Task<bool> IsCreated(string tableName, string? database = null)
     {
-        GetConnection();
         await ChangeDatabase(database);      
 
         using SqlCommand cmd = new() {
@@ -234,8 +201,6 @@ public class SqlServerCall(string conStr) : IDisposable
         };
 
         var ret = cmd.ExecuteScalar() ?? "0";
-
-        EndConnection();
         return int.Parse(ret.ToString()!) == Constants.MethodSuccess;
     }
 
@@ -252,6 +217,7 @@ public class SqlServerCall(string conStr) : IDisposable
         }
 
         if (disposing) {
+            _connection.Close();
            _connection.Dispose();
         }
 
