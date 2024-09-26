@@ -13,7 +13,7 @@ public class SqlServerCall : IDisposable
     public SqlServerCall(string conStr)
     {
         _connection = new SqlConnection(conStr);
-        _connection.Open();
+        _connection.OpenAsync().GetAwaiter().GetResult();
     }
 
     public async Task<int> BulkInsert(DataTable table,
@@ -110,7 +110,8 @@ public class SqlServerCall : IDisposable
     {
         using var cmd = new SqlCommand() {
             CommandText = query,
-            Connection = _connection
+            Connection = _connection,
+            CommandTimeout = 1200
         };
 
         using var reader = await cmd.ExecuteReaderAsync();
@@ -124,7 +125,7 @@ public class SqlServerCall : IDisposable
                 table.Columns.Add(reader.GetName(i), reader.GetFieldType(i));
             }
 
-            while (reader.ReadAsync().Result)
+            while (await reader.ReadAsync())
             {
                 glCount++;
                 DataRow row = table.NewRow();
@@ -150,6 +151,7 @@ public class SqlServerCall : IDisposable
                         $"  - Current table {sysName}.{tableName} line count: {table.Rows.Count} lines."
                     );
                     await homeServer.BulkInsert(table, tableName, sysName, database);
+                    glCount = 0;
                     table.Clear();
                 }
             }
