@@ -17,9 +17,8 @@ public static class MssqlDataTransfer
         List<Task> tasks = [];
         int errCount = 0;
 
-
         using SqlServerCall homeServerCall = new(conStr);
-        var options = new ParallelOptions { MaxDegreeOfParallelism = threadPagination };
+        var options = new ParallelOptions { MaxDegreeOfParallelism = 5 };
 
         int executionId = homeServerCall.GetScalarDataFromServer(
             @$"
@@ -55,6 +54,8 @@ public static class MssqlDataTransfer
         );
 
         homeServerCall.Dispose();
+
+        Log.Out("Extraction being queued...");
 
         await Parallel.ForEachAsync(Enumerable.Range(0, metadata.Count), options, async (i, token) => {
             using var localHomeCall = new SqlServerCall(conStr);
@@ -127,6 +128,8 @@ public static class MssqlDataTransfer
         });
 
         if (errCount > 0) return Constants.MethodFail;
+
+        Log.Out("Extraction queue executed.");
         
         return Constants.MethodSuccess;
     }
