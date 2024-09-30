@@ -8,8 +8,7 @@ public static class Log
     public static void Out(string message,
                     [System.Runtime.CompilerServices.CallerMemberName] string? callerMethod = null)
     {
-        string _logPrefix = $"[{DateTime.Now}]::";
-        string log = _logPrefix + $"[{callerMethod}] > " + message;
+        string log = LogPrefix() + $"[{callerMethod}] > " + message;
         Console.WriteLine(log);
     }
 
@@ -20,15 +19,22 @@ public static class Log
                                 SqlServerCall homeCall,
                     [System.Runtime.CompilerServices.CallerMemberName] string? callerMethod = null)
     {
-        string _logPrefix = $"[{DateTime.Now}]::";
-        string log = _logPrefix + $"[{callerMethod}]::[LOGGED] > " + message;
+        string log = LogPrefix() + $"[{callerMethod}]::[LOGGED] > " + message;
 
-        await homeCall.ExecuteCommand(
+        var res = await homeCall.ExecuteCommand(
             new SqlCommand(
                 @$"INSERT INTO DWController..DW_LOG
                 VALUES({executionId}, {operationId}, '{message}', {Constants.MethodSuccess}, {extractionId}, DEFAULT)"
             )
         );
+        if(!res.IsOk) {
+            string error = LogPrefix() + $"[{callerMethod}] > Error ocurred while attempting to send log data to server: {res.Error.ExceptionMessage}";
+            Console.WriteLine(error);
+            return;
+        }
+
         Console.WriteLine(log);
     }
+
+    private static string LogPrefix() => $"[{DateTime.Now:dd/MM/yyyy HH:mm:ss:fff}]::";
 }

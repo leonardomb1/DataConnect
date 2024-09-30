@@ -1,15 +1,23 @@
 services:
-  runner:
-    build: .
-    network_mode: bridge
-    ports:
-      - "${PORT_TO_USE}:${PORT_TO_USE}"
+  runner1: &runner
+    container_name: runner1
+    image: registry-gitlab.ripbr.com.br/ti-dados/dataconnect:main
+    networks:
+      - dataconnect
+    dns:
+      - 10.247.81.10
+    dns_search: mykaefer.com
+    dns_opt:
+      - ndots:15
     environment:
       - DW_CONNECTIONSTRING=${DW_CONNECTIONSTRING}
       - PORT_TO_USE=${PORT_TO_USE}
       - EXPORT_DATABASE=${EXPORT_DATABASE}
       - THREAD_PAGINATION=${THREAD_PAGINATION}
       - THREAD_TIMEOUT=${THREAD_TIMEOUT}
+      - PACKET_SIZE=${PACKET_SIZE}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - MAX_TABLE_COUNT=${MAX_TABLE_COUNT}
     deploy:
       resources:
         limits:
@@ -18,3 +26,33 @@ services:
           memory: 256M
     tty: true
     stdin_open: true
+
+  runner2:
+    <<: *runner
+    container_name: runner2
+      
+  runner3:
+    <<: *runner
+    container_name: runner3
+    
+  nginx:
+    image: nginx:latest
+    networks:
+      - dataconnect
+    dns:
+      - 10.247.81.10
+    dns_search: mykaefer.com
+    dns_opt:
+      - ndots:15
+    ports:
+      - "10000:80"
+    volumes:
+      - /mnt/storage-docker/volumes/nginx:/etc/nginx:ro
+    depends_on:
+      - runner1
+      - runner2
+      - runner3
+
+networks:
+  dataconnect:
+    driver: bridge

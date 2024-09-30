@@ -1,7 +1,6 @@
 using System.Data;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using WatsonWebserver.Core;
+using System.Text.Json.Nodes;
 using DataConnect.Etl.Sql;
 using DataConnect.Etl.Converter;
 using DataConnect.Etl.Templates;
@@ -10,30 +9,35 @@ using DataConnect.Models;
 using DataConnect.Shared;
 using DataConnect.Controller;
 using DataConnect.Types;
+using DataConnect.Validator;
 
 namespace DataConnect.Routes;
 
 public static class StouApi
 {
-    public static async Task<int> StouEspelho(HttpContextBase ctx,
+    public static async Task StouEspelho(HttpContextBase ctx,
                                               string conStr,
                                               string database,
                                               int threadPagination,
                                               int threadTimeout,
                                               HttpSender sender) 
     {
-        Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
-        if (!request.IsOk) return Constants.MethodFail;
+        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        if (!request.IsOk) {
+            await Response.BadRequest(ctx);
+            return;
+        }
         
         using var requestBody = request.Value;
         
-        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
-            return Constants.MethodFail;
-        
+        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) {
+            await Response.BadRequest(ctx);
+            return;
+        }
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
         
         // Realiza-se primeira chamada para resgatar quantidade de páginas.
-        Result<dynamic, int> firstReturn = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
+        var firstReturn = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
@@ -44,17 +48,32 @@ public static class StouApi
             System.Net.Http.HttpMethod.Post,
             request.Value.ConnectionInfo
         ]);
-        if (!firstReturn.IsOk) return Constants.MethodFail;
+        if (!firstReturn.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send request, {firstReturn.Error.ExceptionMessage}");
+        }
 
-        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
+        Result<DataTable, Error> tableAttempt = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
+        if (!tableAttempt.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to process JSON return, {tableAttempt.Error.ExceptionMessage}");
+        }
+
+        using DataTable table = tableAttempt.Value;
+        tableAttempt.Value.Dispose();
         table.Rows.Clear();
 
         SqlServerCall firstCall = new(conStr);
         await firstCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
         firstCall.Dispose();
 
-        JsonObject firstJson = JsonSerializer.Deserialize<JsonObject>(firstReturn.Value);
-        int pageCount = firstJson["totalCount"]?.GetValue<int>() ?? 0;
+        Result<JsonObject, Error> firstJson = RequestValidate.GetJsonObject(firstReturn.Value);
+        if (!firstJson.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send request, {firstJson.Error.ExceptionMessage}");
+        }
+
+        int pageCount = firstJson.Value["totalCount"]?.GetValue<int>() ?? 0;
 
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
@@ -66,7 +85,7 @@ public static class StouApi
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
         const string ApiAuthMethod = "SimpleAuthBodyRequestAsync";
         const string InnerProp = "itens";
-        await PaginatedExtractTemplate.PaginatedApiToSqlDatabase(
+        var extract = await PaginatedExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
             sender,
             conStr,
@@ -87,24 +106,47 @@ public static class StouApi
             request.Value.ConnectionInfo,
             database
         );
+        if(!extract.IsOk) {
+            await Response.MultiStatus(
+                ctx,
+                [
+                    new Response() {
+                        Error = false,
+                        Message = "OK",
+                        Status = 200
+                    },
+                    new Response() {
+                        Error = true,
+                        Message = $"Error while attempting extraction : {extract.Error.ExceptionMessage}, occured {extract.Error.ErrorCount} times",
+                        Status = 500
+                    }
+                ]
+            );
+            Log.Out($"The extraction job has finished with errors, total error count {extract.Error.ErrorCount}");
+            return;
+        }
 
         Log.Out(
             $"Extraction job {ctx.Request.Guid} has been completed."
         );
 
-        return Constants.MethodSuccess; 
+        await Response.Ok(ctx);
     }
 
-    public static async Task<int> StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, HttpSender sender)
+    public static async Task StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
-        Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
-        if (!request.IsOk) return Constants.MethodFail;
+        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        if (!request.IsOk) {
+            await Response.BadRequest(ctx);
+            return;
+        }
         
         using var requestBody = request.Value;
-
-        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) 
-            return Constants.MethodFail;
         
+        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) {
+            await Response.BadRequest(ctx);
+            return;
+        }
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
 
         Log.Out(
@@ -112,7 +154,7 @@ public static class StouApi
             $"  - Looking back since: {filteredDate}"
         );
 
-        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
+        Result<dynamic, Error> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
@@ -122,34 +164,55 @@ public static class StouApi
             System.Net.Http.HttpMethod.Post,
             request.Value.ConnectionInfo
         ]);
-        if (!res.IsOk) return Constants.MethodFail;
+        if (!res.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send request, {res.Error.ExceptionMessage}");
+        }
 
+        Result<DataTable, Error> tableAttempt = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
+        if (!tableAttempt.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to process JSON return, {tableAttempt.Error.ExceptionMessage}");
+        }
 
-        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
+        using DataTable table = tableAttempt.Value;
+        tableAttempt.Value.Dispose();
         
         using SqlServerCall serverCall = new(conStr);
-        await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
-        await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var create = await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        if (!create.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to create table in server, {create.Error.ExceptionMessage}");
+        }
+
+        var insert = await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        if (!insert.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send data to server, {insert.Error.ExceptionMessage}");
+        }
 
         Log.Out(
             $"Extraction job {ctx.Request.Guid} has been completed."
         );
 
-        return Constants.MethodSuccess; 
+        await Response.Ok(ctx);
     }
 
-    public static async Task<int> StouBasic(HttpContextBase ctx, string conStr, string database, HttpSender sender)
+    public static async Task StouBasic(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
-        Result<BodyDefault, int> request = await RestTemplate.RequestStart(ctx);
-        if (!request.IsOk) return Constants.MethodFail;
+        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        if (!request.IsOk) {
+            await Response.BadRequest(ctx);
+            return;
+        }
         
         using var requestBody = request.Value;
 
         Log.Out(
             $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n"
         );
-        using var client = new HttpClient();
-        Result<dynamic, int> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
+
+        Result<dynamic, Error> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
             BuildPayload(
                 requestBody.Options, 
                 requestBody.DestinationTableName, 
@@ -159,20 +222,37 @@ public static class StouApi
             System.Net.Http.HttpMethod.Post,
             request.Value.ConnectionInfo
         ]);
-        if (!res.IsOk) return Constants.MethodFail;
+        if (!res.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send request, {res.Error.ExceptionMessage}");
+        }
 
+        Result<DataTable, Error> tableAttempt = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
+        if (!tableAttempt.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to process JSON return, {tableAttempt.Error.ExceptionMessage}");
+        }
 
-        using DataTable table = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
+        using DataTable table = tableAttempt.Value;
+        tableAttempt.Value.Dispose();
         
         using SqlServerCall serverCall = new(conStr);
-        await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
-        await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var create = await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        if (!create.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to create table in server, {create.Error.ExceptionMessage}");
+        }
 
+        var insert = await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        if (!insert.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send data to server, {insert.Error.ExceptionMessage}");
+        }
         Log.Out(
             $"Extraction job {ctx.Request.Guid} has been completed."
         );
 
-        return Constants.MethodSuccess; 
+        await Response.Ok(ctx);
     }
 
     private static List<KeyValuePair<string, string>> BuildPayload(string[] options,

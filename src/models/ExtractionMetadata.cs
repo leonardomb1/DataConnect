@@ -14,7 +14,7 @@ public class ExtractionMetadata : IDisposable
     public int? LookBackValue {get; set;}
     public string? IndexName {get; set;}
     public required string SystemName {get; set;}
-    public required string ConnectionString {get; set;}
+    public string? ConnectionString {get; set;}
 
     public static List<ExtractionMetadata> ConvertFromDataTable(DataTable table)
     {
@@ -34,6 +34,31 @@ public class ExtractionMetadata : IDisposable
                 IndexName = row.Field<string?>("NM_INDIC") ?? "",
                 SystemName = row.Field<string>("NM_SISTEMA")!,
                 ConnectionString = row.Field<string>("DS_CONSTRING")!
+            };
+
+            list.Add(obj);
+        }
+
+        return list;
+    }
+
+    public static List<ExtractionMetadata> ConvertFromDataTableBasic(DataTable table)
+    {
+        var list = new List<ExtractionMetadata>();
+
+        foreach (DataRow row in table.Rows)
+        {
+            var obj = new ExtractionMetadata
+            {
+                ExtractId = row.Field<int>("ID_DW_EXTLIST"),
+                TableName = row.Field<string>("NM_TABELA")!,
+                ScheduleId = row.Field<int>("ID_DW_AGENDADOR"),
+                SystemId = row.Field<int>("ID_DW_SISTEMA"),
+                TableType = row.Field<string>("TP_TABELA")![0]!,
+                ColumnName = row.Field<string?>("NM_COLUNA") ?? "",
+                LookBackValue = row.Field<int?>("VL_INC_TABELA") ?? 0,
+                IndexName = row.Field<string?>("NM_INDIC") ?? "",
+                SystemName = row.Field<string>("NM_SISTEMA")!,
             };
 
             list.Add(obj);

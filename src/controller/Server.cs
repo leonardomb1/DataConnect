@@ -12,7 +12,7 @@ public class Server : IDisposable
 {
     private bool _disposed;
     private readonly int _port;
-    private readonly bool _ssl = false;
+    private readonly bool _ssl = true;
     private readonly WebserverLite _server;
 
     public Server(int port,
@@ -22,6 +22,7 @@ public class Server : IDisposable
                   int threadTimeout,
                   int packetSize,
                   string authSecret,
+                  int maxTableCount,
                   IHttpClientFactory clientFactory)
     {
         _port = port;
@@ -42,7 +43,10 @@ public class Server : IDisposable
                 return StouApi.StouAssinaturaEspelho(ctx, conStr, database, httpSender);
         });
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", async (HttpContextBase ctx) => {
-                await DBDataTransfer.ScheduledMssql(ctx, conStr, threadPagination, packetSize);
+                await DBDataTransfer.ScheduledMssql(ctx, conStr, maxTableCount, packetSize);
+        });
+        _server.Routes.PostAuthentication.Parameter.Add(WatsonWebserver.Core.HttpMethod.GET, "/api/sql/{systemId}/{scheduleId}", async (HttpContextBase ctx) => {
+                await DBDataTransfer.GetScheduleByScheduleId(ctx, conStr);
         });
     }
 
@@ -59,38 +63,29 @@ public class Server : IDisposable
             $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
         );
         
-        string res = JsonSerializer.Serialize(new Response() {
-            Error = false,
-            Status = 404,
-            Message = "The resource was not found.",
-            Options = []
-        });
-
-        ctx.Response.StatusCode = 404;
-        await ctx.Response.Send(res);
+        await Response.NotFound(ctx);
         
         Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
     }
 
     public static async Task Authenticate(HttpContextBase ctx, string authSecret)
     {
-        string token = ctx.Request.Headers.GetValues("token")![0];
         string validate = Encryption.Sha256(authSecret + $"{DateTime.Today:dd/MM/yyyy}");
 
-        if (token != validate) await NotAuthorized(ctx);
+        try
+        {
+            string token = ctx.Request.Headers.GetValues("token")![0];
+            if (token != validate) await NotAuthorized(ctx);
+        }
+        catch (Exception)
+        {
+            await NotAuthorized(ctx);
+        }
     }
 
     private static async Task NotAuthorized(HttpContextBase ctx)
     {
-        string res = JsonSerializer.Serialize(new Response() {
-            Error = true,
-            Status = 401,
-            Message = "Not Authorized",
-            Options = []
-        });
-
-        ctx.Response.StatusCode = 401;
-        await ctx.Response.Send(res);
+        await Response.Unauthorized(ctx);
         Log.Out($"Unauthorized request by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}.");
     }
 
@@ -101,24 +96,16 @@ public class Server : IDisposable
             $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
         );
         
-        List<string> routes = [
+        string[] routes = [
             "POST /api/custom/ponto_espelho",
             "POST /api/custom/configuracao_competencia",
             "POST /api/custom/ponto_assinatura_espelho",
             "POST /api/sql",
             "GET  /api"
         ];
-
-        string res = JsonSerializer.Serialize(new Response() {
-            Error = false,
-            Status = 200,
-            Message = "Refer to the following options.",
-            Options = routes
-        });
-
-        ctx.Response.StatusCode = 200;
-        await ctx.Response.Send(res);
-
+        
+        await Response.SendAsString(ctx, false, "Refer to the following options.", 200, null, routes);
+        
         Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
     }
     public void Dispose()
