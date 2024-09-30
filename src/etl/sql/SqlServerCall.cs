@@ -1,4 +1,5 @@
 using System.Data;
+using DataConnect.Models;
 using DataConnect.Shared;
 using DataConnect.Types;
 using Microsoft.Data.SqlClient;
@@ -16,7 +17,7 @@ public class SqlServerCall : IDisposable
         _connection.OpenAsync().GetAwaiter().GetResult();
     }
 
-    public async Task<int> BulkInsert(DataTable table,
+    public async Task<Result<int, Error>> BulkInsert(DataTable table,
                                     string tableName,
                                     string sysName,
                                     string? database = null)
@@ -31,15 +32,13 @@ public class SqlServerCall : IDisposable
             
         try {
             await bulkCopy.WriteToServerAsync(table);
-            Log.Out($"API return has been written into the table: {sysName.ToUpper()}.{tableName.ToUpper()}");
             return Constants.MethodSuccess;
-        } catch (SqlException ex) {
-            Log.Out($"Error while attempting insert: {ex.Message}");
-            return Constants.MethodFail;
+        } catch (Exception ex) {
+            return new Error { ExceptionMessage = ex.Message };
         }
     }
 
-    public async Task CreateTable(DataTable table,
+    public async Task<Result<int, Error>> CreateTable(DataTable table,
                                   string tableName,
                                   string sysName,
                                   string? database = null)
@@ -60,13 +59,23 @@ public class SqlServerCall : IDisposable
             createTableQuery += $"ID_DW_{tableName.ToUpper()} INT NOT NULL IDENTITY(1,1) CONSTRAINT IX_{tableName.ToUpper()}_SK PRIMARY KEY, ";
             createTableQuery += $"DT_UPDATE_{tableName.ToUpper()} DATETIME NOT NULL CONSTRAINT CK_UPDATE_{tableName.ToUpper()} DEFAULT(GETDATE()));";
             cmd.CommandText = createTableQuery;
-            await cmd.ExecuteNonQueryAsync();
+
+            try
+            {
+                await cmd.ExecuteNonQueryAsync();
+                return Constants.MethodSuccess;
+            }
+            catch (Exception ex)
+            {
+                return new Error() { ExceptionMessage = ex.Message }; 
+            }
         } else {
             Log.Out($"Table {tableName.ToUpper()} already exists.");
+            return Constants.MethodSuccess;
         }
     }
 
-    public async Task<DataTable> GetTableDataFromServer(string query, string? database = null)
+    public async Task<Result<DataTable, Error>> GetTableDataFromServer(string query, string? database = null)
     {
         await ChangeDatabase(database);
 
@@ -77,14 +86,17 @@ public class SqlServerCall : IDisposable
             CommandText = query
         };
 
-        var reader = await cmd.ExecuteReaderAsync();
-
-        data.Load(reader);
-
-        return data;
+        try {
+            var reader = await cmd.ExecuteReaderAsync();
+            data.Load(reader);
+            return data;
+        } 
+        catch (Exception ex) {
+            return new Error() { ExceptionMessage = ex.Message };
+        }
     }
 
-    public async Task ExecuteCommand(SqlCommand cmd, string? database = null)
+    public async Task<Result<int, Error>> ExecuteCommand(SqlCommand cmd, string? database = null)
     {
         await ChangeDatabase(database);     
 
@@ -92,14 +104,15 @@ public class SqlServerCall : IDisposable
 
         try {
             await cmd.ExecuteNonQueryAsync();
+            return Constants.MethodSuccess;
         }
         catch (Exception ex)
-        {      
-            Log.Out($"Error while executing command: {ex.Message}");
+        {
+            return new Error() { ExceptionMessage = ex.Message };
         }
     }
 
-    public async Task<Result<int, dynamic>> ReadPacketFromServer(string query,
+    public async Task<Result<int, Error>> ReadPacketFromServer(string query,
                                                                  int packetSize,
                                                                  string tableName,
                                                                  string sysName,
@@ -116,7 +129,7 @@ public class SqlServerCall : IDisposable
 
         using var reader = await cmd.ExecuteReaderAsync();
         using var table = new DataTable();
-        int glCount = 0;
+        int logLineCount = 0;
 
         try
         {
@@ -127,7 +140,7 @@ public class SqlServerCall : IDisposable
 
             while (await reader.ReadAsync())
             {
-                glCount++;
+                logLineCount++;
                 DataRow row = table.NewRow();
                 for (int i = 0; i < reader.FieldCount; i++)
                 {
@@ -135,13 +148,13 @@ public class SqlServerCall : IDisposable
                 }
                 table.Rows.Add(row);
                 
-                if (glCount == 10000) {
+                if (logLineCount == 10000) {
                     Log.Out(
                         $"Reading packet data from reader array:\n" +
                         $"  - Current table {sysName}.{tableName} line count: {table.Rows.Count} lines."
                     );
 
-                    glCount = 0;
+                    logLineCount = 0;
                 }
 
                 if (table.Rows.Count >= packetSize)
@@ -150,14 +163,64 @@ public class SqlServerCall : IDisposable
                         $"Inserting packet data from reader array:\n" +
                         $"  - Current table {sysName}.{tableName} line count: {table.Rows.Count} lines."
                     );
-                    await homeServer.BulkInsert(table, tableName, sysName, database);
-                    glCount = 0;
+
+                    Result<int, Error> innerInsert;
+                    int attempt = 0;
+
+                    do
+                    {
+                        attempt++;
+                        innerInsert = await homeServer.BulkInsert(table, tableName, sysName, database);
+                        if (!innerInsert.IsOk) {
+                            Log.Out(
+                                $"Error while attempting to transfer data from packet: {innerInsert.Error.ExceptionMessage}.\n" +  
+                                $"- Attempt {attempt} - out of 5\n    - Table: {sysName}.{tableName}"
+                            );
+                        }
+                    } while (!innerInsert.IsOk && attempt < 5);
+
+                    if (!innerInsert.IsOk) {
+                        await Log.ToServer(
+                            $"Table insert attempt has reached maximum attempt count. Table: {sysName}.{tableName}",
+                            executionId,
+                            extractionId,
+                            Constants.LogErrorExecute,
+                            homeServer
+                        );
+                        return new Error() { ExceptionMessage = $"Error attempting to insert data to server: {innerInsert.Error.ExceptionMessage}" };
+                    }
+
+                    logLineCount = 0;
                     table.Clear();
                 }
             }
 
             if (table.Rows.Count > 0) {
-                await homeServer.BulkInsert(table, tableName, sysName, database);
+                Result<int, Error> outerInsert;
+                int attempt = 0;
+
+                do
+                {
+                    attempt++;
+                    outerInsert = await homeServer.BulkInsert(table, tableName, sysName, database);
+                    if (!outerInsert.IsOk) {
+                        Log.Out(
+                            $"Error while attempting to transfer data from packet: {outerInsert.Error.ExceptionMessage}.\n" +  
+                            $"- Attempt {attempt} - out of 5\n    - Table: {sysName}.{tableName}"
+                        );
+                    }
+                } while (!outerInsert.IsOk && attempt < 5);
+
+                if (!outerInsert.IsOk) {
+                    await Log.ToServer(
+                        $"Table insert attempt has reached maximum attempt count. Table: {sysName}.{tableName}",
+                        executionId,
+                        extractionId,
+                        Constants.LogErrorExecute,
+                        homeServer
+                    );
+                    return new Error() { ExceptionMessage = $"Error attempting to insert data to server: {outerInsert.Error.ExceptionMessage}" };
+                }
             }
             return Constants.MethodSuccess;
         }
@@ -170,7 +233,7 @@ public class SqlServerCall : IDisposable
                 Constants.LogErrorExecute,
                 homeServer
             );
-            return Constants.MethodFail;
+            return new Error() { ExceptionMessage = ex.Message };
         } finally {
             if (reader!= null &&!reader.IsClosed)
             {
@@ -179,7 +242,7 @@ public class SqlServerCall : IDisposable
         }
     }
 
-    public async Task<Result<int, dynamic>> GetScalarDataFromServer(string query, string? database = null)
+    public async Task<Result<int, Error>> GetScalarDataFromServer(string query, string? database = null)
     {
         await ChangeDatabase(database);
 
@@ -195,7 +258,7 @@ public class SqlServerCall : IDisposable
         catch (Exception ex)
         {      
             Log.Out($"Error while fetching data from server: {ex.Message}, command text: {cmd.CommandText}");
-            return Constants.MethodFail;
+            return new Error() { ExceptionMessage = ex.Message };
         }
     }
 
@@ -234,7 +297,7 @@ public class SqlServerCall : IDisposable
 
         if (disposing) {
             _connection.Close();
-           _connection.Dispose();
+            _connection.Dispose();
         }
 
         _disposed = true;

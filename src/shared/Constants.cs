@@ -11,5 +11,5 @@ public static class Constants
     public const char Incremental = 'I';
     public const char Total = 'T';
     public const char Delete = 'D';
-    public const string ProgramVersion = "1.0.1";
+    public const string ProgramVersion = "1.0.2";
 }

@@ -1,22 +1,32 @@
 using Microsoft.IdentityModel.Tokens;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using DataConnect.Models;
 using DataConnect.Types;
-using DataConnect.Shared;
 using WatsonWebserver.Core;
 
 namespace DataConnect.Validator;
 
 public static class RequestValidate
 {
-    public static Result<BodyDefault, int> GetBodyDefault(dynamic json)
+    public static Result<BodyDefault, Error> GetBodyDefault(dynamic json)
     {
         if(IsValidDeserialized(json))
         {
             return JsonSerializer.Deserialize<BodyDefault>(json);
         }
         else {
-            return Constants.MethodFail;
+            return new Error { ExceptionMessage = "Error occured when trying to interpret JSON input." };
+        }
+    }
+
+    public static Result<JsonObject, Error> GetJsonObject(dynamic json)
+    {
+        try {
+            JsonObject obj = JsonSerializer.Deserialize<JsonObject>(json);
+            return obj;
+        } catch (Exception ex) {
+            return new Error() { ExceptionMessage = $"Error occured after attempting to deserialize JSON, {ex.Message}"};
         }
     }
 
