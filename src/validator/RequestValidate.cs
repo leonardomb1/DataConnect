@@ -1,6 +1,5 @@
 using Microsoft.IdentityModel.Tokens;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using DataConnect.Models;
 using DataConnect.Types;
 using WatsonWebserver.Core;
@@ -9,24 +8,14 @@ namespace DataConnect.Validator;
 
 public static class RequestValidate
 {
-    public static Result<BodyDefault, Error> GetBodyDefault(dynamic json)
-    {
-        if(IsValidDeserialized(json))
+
+    public static Result<T, Error> GetDeserialized<T>(string json) {
+    if(IsValidDeserialized<T>(json))
         {
-            return JsonSerializer.Deserialize<BodyDefault>(json);
+            return JsonSerializer.Deserialize<T>(json)!;
         }
         else {
             return new Error { ExceptionMessage = "Error occured when trying to interpret JSON input." };
-        }
-    }
-
-    public static Result<JsonObject, Error> GetJsonObject(dynamic json)
-    {
-        try {
-            JsonObject obj = JsonSerializer.Deserialize<JsonObject>(json);
-            return obj;
-        } catch (Exception ex) {
-            return new Error() { ExceptionMessage = $"Error occured after attempting to deserialize JSON, {ex.Message}"};
         }
     }
 
@@ -49,11 +38,11 @@ public static class RequestValidate
             return false;
         }
     }
-    public static bool IsValidDeserialized(dynamic json)
+    public static bool IsValidDeserialized<T>(dynamic json)
     {
         try
         {
-            JsonSerializer.Deserialize<BodyDefault>(json);
+            JsonSerializer.Deserialize<T>(json);
             return true;
         }
         catch (JsonException)
