@@ -1,4 +1,5 @@
 using System.Data;
+using DataConnect.Shared;
 
 namespace DataConnect.Models;
 
@@ -16,7 +17,7 @@ public class ExtractionMetadata : IDisposable
     public required string SystemName {get; set;}
     public string? ConnectionString {get; set;}
 
-    public static List<ExtractionMetadata> ConvertFromDataTable(DataTable table)
+    public static List<ExtractionMetadata> ConvertFromDataTable(DataTable table, string authSecret)
     {
         var list = new List<ExtractionMetadata>();
 
@@ -33,7 +34,7 @@ public class ExtractionMetadata : IDisposable
                 LookBackValue = row.Field<int?>("VL_INC_TABELA") ?? 0,
                 IndexName = row.Field<string?>("NM_INDIC") ?? "",
                 SystemName = row.Field<string>("NM_SISTEMA")!,
-                ConnectionString = row.Field<string>("DS_CONSTRING")!
+                ConnectionString = Encryption.SymmetricDecryptAES256(row.Field<string>("DS_CONSTRING")!, Encryption.Sha256(authSecret))
             };
 
             list.Add(obj);
@@ -42,7 +43,7 @@ public class ExtractionMetadata : IDisposable
         return list;
     }
 
-    public static List<ExtractionMetadata> ConvertFromDataTableBasic(DataTable table)
+    public static List<ExtractionMetadata> ConvertFromDataTable(DataTable table)
     {
         var list = new List<ExtractionMetadata>();
 

@@ -10,10 +10,11 @@ namespace DataConnect.Etl.Templates;
 public static class MssqlDataTransfer
 {
     public static async Task<Result<int, Error>> ExchangeData(string conStr,
-                                          int scheduleId,
-                                          int systemId,
-                                          int maxTableCount,
-                                          int packetSize)
+                                                              int scheduleId,
+                                                              int systemId,
+                                                              int maxTableCount,
+                                                              int packetSize,
+                                                              string authSecret)
     {
         int errCount = 0;
 
@@ -47,7 +48,8 @@ public static class MssqlDataTransfer
         );
         if (!getMetadataAttempt.IsOk) return getMetadataAttempt.Error;
         var metadata = ExtractionMetadata.ConvertFromDataTable(
-            getMetadataAttempt.Value
+            getMetadataAttempt.Value,
+            authSecret
         );
 
         // Resgatar consultas a serem executadas
@@ -175,7 +177,12 @@ public static class MssqlDataTransfer
         return Constants.MethodSuccess;  
     }
 
-    private static SqlCommand AddParameter(List<QueryMetadata> queryData, char tableType, int lineCount, string tableName, int? lookBackValue, string? columnName)
+    private static SqlCommand AddParameter(List<QueryMetadata> queryData,
+                                           char tableType,
+                                           int lineCount,
+                                           string tableName,
+                                           int? lookBackValue,
+                                           string? columnName)
     {
         var command = new SqlCommand() {
             CommandText = queryData
@@ -207,7 +214,14 @@ public static class MssqlDataTransfer
         return command;
     }
 
-    private static SqlCommand BuildCommandWithDelete(List<QueryMetadata> queryData, char tableType, int lineCount, string tableName, string indexName, int? lookBackValue, string? columnName, string sysName)
+    private static SqlCommand BuildCommandWithDelete(List<QueryMetadata> queryData,
+                                                     char tableType,
+                                                     int lineCount,
+                                                     string tableName,
+                                                     string indexName,
+                                                     int? lookBackValue,
+                                                     string? columnName,
+                                                     string sysName)
     {
         var command = new SqlCommand() {
             CommandText = queryData

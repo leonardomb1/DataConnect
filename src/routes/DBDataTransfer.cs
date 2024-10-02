@@ -1,22 +1,23 @@
 using WatsonWebserver.Core;
 using DataConnect.Shared;
 using DataConnect.Models;
-using DataConnect.Validator;
 using DataConnect.Etl.Templates;
 using DataConnect.Etl.Sql;
+using DataConnect.Validator;
+using System.Security.Cryptography;
 
 namespace DataConnect.Routes;
 
 public static class DBDataTransfer
 {
-    public static async Task ScheduledMssql(HttpContextBase ctx, string conStr, int maxTableCount, int packetSize)
+    public static async Task ScheduledMssql(HttpContextBase ctx, string conStr, int maxTableCount, int packetSize, string authSecret)
     {
         Log.Out(
             $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
             $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
         ); 
 
-        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        var request = RequestValidate.GetDeserialized<BodyScheduled>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
@@ -24,17 +25,17 @@ public static class DBDataTransfer
         
         using var requestBody = request.Value;
 
-        if (!int.TryParse(requestBody.Options[0], out int scheduleId)) {
+        if (!int.TryParse(requestBody.ScheduleId.ToString(), out int scheduleId)) {
             await Response.BadRequest(ctx);
             return;
         }
         
-        if (!int.TryParse(requestBody.Options[1], out int systemId)) {
+        if (!int.TryParse(requestBody.SystemId.ToString(), out int systemId)) {
             await Response.BadRequest(ctx);
             return;
         }
 
-        var exchangeAttempt = await MssqlDataTransfer.ExchangeData(conStr, scheduleId, systemId, maxTableCount, packetSize);
+        var exchangeAttempt = await MssqlDataTransfer.ExchangeData(conStr, requestBody.ScheduleId, requestBody.SystemId, maxTableCount, packetSize, authSecret);
         
         if (!exchangeAttempt.IsOk) {
             if (exchangeAttempt.Error.IsPartialSuccess ?? false) {
@@ -106,10 +107,38 @@ public static class DBDataTransfer
             return;
         }
 
-        List<ExtractionMetadata> metadata = ExtractionMetadata.ConvertFromDataTableBasic(getDataAttempt.Value);
+        List<ExtractionMetadata> metadata = ExtractionMetadata.ConvertFromDataTable(getDataAttempt.Value);
 
         await Response.SendAsString(ctx, false, "OK", 200, [.. metadata]);
         metadata.ForEach(x => x.Dispose());
         metadata.Clear();
+    }
+
+    public static async Task GetTestEncrypt(HttpContextBase ctx, string authSecret)
+    {
+        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
+        if (!request.IsOk) {
+            await Response.BadRequest(ctx);
+            return;
+        }
+        
+        using var requestBody = request.Value;
+        string encrypted = Encryption.SymmetricEncryptAES256(requestBody.ConnectionInfo, Encryption.Sha256(authSecret));
+        
+        await Response.SendAsString(ctx, false, encrypted, 200);
+    }
+
+    public static async Task GetTestDecrypt(HttpContextBase ctx, string authSecret)
+    {
+        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
+        if (!request.IsOk) {
+            await Response.BadRequest(ctx);
+            return;
+        }
+        
+        using var requestBody = request.Value;
+        string encrypted = Encryption.SymmetricDecryptAES256(requestBody.ConnectionInfo, Encryption.Sha256(authSecret));
+        
+        await Response.SendAsString(ctx, false, encrypted, 200);
     }
 }

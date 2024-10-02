@@ -5,6 +5,7 @@ using WatsonWebserver.Core;
 using WatsonWebserver.Lite;
 using DataConnect.Routes;
 using DataConnect.Etl.Http;
+using DataConnect.Validator;
 
 namespace DataConnect.Controller;
 
@@ -43,7 +44,7 @@ public class Server : IDisposable
                 return StouApi.StouAssinaturaEspelho(ctx, conStr, database, httpSender);
         });
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", async (HttpContextBase ctx) => {
-                await DBDataTransfer.ScheduledMssql(ctx, conStr, maxTableCount, packetSize);
+                await DBDataTransfer.ScheduledMssql(ctx, conStr, maxTableCount, packetSize, authSecret);
         });
         _server.Routes.PostAuthentication.Parameter.Add(WatsonWebserver.Core.HttpMethod.GET, "/api/sql/{systemId}/{scheduleId}", async (HttpContextBase ctx) => {
                 await DBDataTransfer.GetScheduleByScheduleId(ctx, conStr);
@@ -71,9 +72,9 @@ public class Server : IDisposable
     public static async Task Authenticate(HttpContextBase ctx, string authSecret)
     {
         string validate = Encryption.Sha256(authSecret + $"{DateTime.Today:dd/MM/yyyy}");
-
         try
         {
+            if(!RequestValidate.ContainsCorrectHeader(ctx, ["token"])) await NotAuthorized(ctx);
             string token = ctx.Request.Headers.GetValues("token")![0];
             if (token != validate) await NotAuthorized(ctx);
         }

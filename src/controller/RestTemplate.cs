@@ -13,9 +13,9 @@ public static class RestTemplate
     {
         try
         {
-            if (RequestValidate.IsValidDeserialized(ctx.Request.DataAsString))
+            if (RequestValidate.IsValidDeserialized<BodyDefault>(ctx.Request.DataAsString))
             {
-                var result = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+                var result = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
                 if (!result.IsOk) {
                     await Response.BadRequest(ctx);
                     return new Error() { ExceptionMessage = "JSON is not in correct format." };

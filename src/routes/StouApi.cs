@@ -22,7 +22,7 @@ public static class StouApi
                                               int threadTimeout,
                                               HttpSender sender) 
     {
-        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
@@ -67,7 +67,7 @@ public static class StouApi
         await firstCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
         firstCall.Dispose();
 
-        Result<JsonObject, Error> firstJson = RequestValidate.GetJsonObject(firstReturn.Value);
+        Result<JsonObject, Error> firstJson = RequestValidate.GetDeserialized<JsonObject>(firstReturn.Value);
         if (!firstJson.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send request, {firstJson.Error.ExceptionMessage}");
@@ -135,7 +135,7 @@ public static class StouApi
 
     public static async Task StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
-        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
@@ -200,7 +200,7 @@ public static class StouApi
 
     public static async Task StouBasic(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
-        var request = RequestValidate.GetBodyDefault(ctx.Request.DataAsString);
+        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
