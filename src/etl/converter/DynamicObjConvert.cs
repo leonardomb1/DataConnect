@@ -1,5 +1,5 @@
 using System.Data;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using DataConnect.Models;
 using DataConnect.Types;
 
@@ -8,41 +8,28 @@ namespace DataConnect.Etl.Converter;
 
 public static class DynamicObjConvert
 {
-    public static Result<DataTable, Error> FromInnerJsonToDataTable(dynamic obj, string prop)
+    public static Result<DataTable, Error> JsonToDataTable(JsonNode obj)
     {
-        ArgumentNullException.ThrowIfNull(obj, nameof(obj));
+        JsonArray array = obj.AsArray();
+        JsonObject firstObject = array[0]!.AsObject();
 
-        string json = Convert.ToString(obj);
         var table = new DataTable();
 
         try {
-            JsonDocument document = JsonDocument.Parse(json);
-            JsonElement root = document.RootElement.GetProperty(prop);
-
-            if (root.ValueKind == JsonValueKind.Array)
-            {
-                foreach (JsonElement element in root.EnumerateArray())
-                {
-                    if (table.Columns.Count == 0)
-                    {
-                        foreach (JsonProperty property in element.EnumerateObject())
-                        {
-                            table.Columns.Add(property.Name);
-                        }
-                    }
-
-                    DataRow row = table.NewRow();
-                    foreach (JsonProperty property in element.EnumerateObject())
-                    {
-                        if (!table.Columns.Contains(property.Name)) {
-                            table.Columns.Add(property.Name);
-                        }
-                        row[property.Name] = property.Value.ToString();
-                    }
-                    table.Rows.Add(row);
-                }
+            foreach (var property in firstObject) {
+                table.Columns.Add(property.Key);
             }
 
+            foreach (JsonObject json in array.Cast<JsonObject>()) {
+                DataRow row = table.NewRow();
+                foreach (var property in json) {
+                    if (!table.Columns.Contains(property.Key)) {
+                        table.Columns.Add(property.Key);
+                    }
+                    row[property.Key] = property.Value?.ToString() ?? "";
+                }
+                table.Rows.Add(row);
+            }
             return table;
         } catch (Exception ex) {
             return new Error() { ExceptionMessage = $"Error while attempting to parse JSON into DataTable, {ex.Message}" };

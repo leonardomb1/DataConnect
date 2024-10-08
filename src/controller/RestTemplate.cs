@@ -1,15 +1,14 @@
-using DataConnect.Etl.Http;
 using DataConnect.Shared;
 using DataConnect.Validator;
 using DataConnect.Models;
 using DataConnect.Types;
 using WatsonWebserver.Core;
-using System.Reflection;
+using System.Text.Json.Nodes;
 
 namespace DataConnect.Controller;
 public static class RestTemplate
 {
-    public static async Task<Result<dynamic, Error>> TemplateRequestHandler(HttpContextBase ctx, HttpSender httpSender, string method, object?[] param)
+    public static async Task<Result<JsonObject, Error>> TemplateRequestHandler(HttpContextBase ctx, Func<Task<Result<JsonObject, Error>>> getter)
     {
         try
         {
@@ -20,9 +19,13 @@ public static class RestTemplate
                     await Response.BadRequest(ctx);
                     return new Error() { ExceptionMessage = "JSON is not in correct format." };
                 }
+             
+                var callback = await getter();
+                if (!callback.IsOk) {
+                    return callback.Error;
+                }
 
-                MethodInfo execute = typeof(HttpSender).GetMethod(method)!;                
-                dynamic jsonReturn = await Task<dynamic>.Factory.StartNew(() => execute.Invoke(httpSender, param)!).Result;
+                JsonObject jsonReturn = callback.Value;
                 
                 return jsonReturn;
             } else {
