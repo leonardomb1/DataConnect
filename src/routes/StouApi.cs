@@ -179,7 +179,7 @@ public static class StouApi
             return;
         }
 
-        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!.AsObject());
+        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!);
         if (!table.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
@@ -244,7 +244,7 @@ public static class StouApi
             return;
         }
 
-        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!.AsObject());
+        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!);
         if (!table.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
