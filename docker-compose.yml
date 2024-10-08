@@ -1,6 +1,7 @@
 services:
   runner1: &runner
     container_name: runner1
+    hostname: dataconnect_runner1
     image: registry-gitlab.ripbr.com.br/ti-dados/dataconnect:main
     networks:
       - dataconnect
@@ -30,10 +31,12 @@ services:
   runner2:
     <<: *runner
     container_name: runner2
+    hostname: dataconnect_runner2
       
   runner3:
     <<: *runner
     container_name: runner3
+    hostname: dataconnect_runner3
     
   nginx:
     image: nginx:latest

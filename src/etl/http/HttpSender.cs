@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using DataConnect.Models;
 using DataConnect.Shared;
 using DataConnect.Types;
 
@@ -42,7 +44,7 @@ public class HttpSender : IDisposable
         return request; 
     }
 
-    private async Task<Result<dynamic, int>> GetRequestAsync(HttpRequestMessage requestTemplate, HttpMethod method)
+    private async Task<Result<JsonObject, Error>> GetRequestAsync(HttpRequestMessage requestTemplate, HttpMethod method)
     {
         var client = _httpClient;
         int maxRetries = 5;
@@ -64,7 +66,7 @@ public class HttpSender : IDisposable
                 
                 using var response = await client.SendAsync(req);
                 response.EnsureSuccessStatusCode();
-                var bodyObj = await response.Content.ReadFromJsonAsync<dynamic>();
+                var bodyObj = await response.Content.ReadFromJsonAsync<JsonObject>();
 
                 return bodyObj!;             
             }
@@ -75,30 +77,31 @@ public class HttpSender : IDisposable
                     $"\n     - Source at: {ex.Source}"
                 );
                 await Task.Delay(delay);
-                delay += TimeSpan.FromMilliseconds(100);
+                delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds * 1.5);
             }
         }
-        return Constants.MethodFail;
+
+        return new Error() { ExceptionMessage = $"Maximum ammount of attempts reached." };
     }
 
-    public async Task<dynamic> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method, string uri)
+    public async Task<Result<JsonObject, Error>> SimpleAuthBodyRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method, string uri)
     {
         if (payload == null || payload.Count < 2)
-            throw new ArgumentException("Insufficient parameters provided");
+            return new Error() { ExceptionMessage = "Insufficient argument count." };
 
         var user =  payload[0];
         var password = payload[1];
         var content = payload.Skip(2).ToList();
         
         var requestContent = AddRequestContent(HttpSimpleAuth(user, password, uri), content);
-        var req = await GetRequestAsync(requestContent, method); 
+        var req = await GetRequestAsync(requestContent, method);
 
         if (req.IsOk) {
             return req.Value;
-        } else throw new Exception("Maximum ammount of retries reached");  
+        } else return req.Error;
     }
 
-    public async Task<dynamic> NoAuthRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method, string uri)
+    public async Task<Result<JsonObject, Error>> NoAuthRequestAsync(List<KeyValuePair<string, string>> payload, HttpMethod method, string uri)
     {
         var content = payload;
 
@@ -106,7 +109,7 @@ public class HttpSender : IDisposable
         var req = await GetRequestAsync(requestContent, method);
         if (req.IsOk) {
             return req.Value;
-        } else throw new Exception("Maximum ammount of retries reached");
+        } else return req.Error;
     }
     
     public void Dispose()

@@ -4,7 +4,6 @@ using DataConnect.Models;
 using DataConnect.Etl.Templates;
 using DataConnect.Etl.Sql;
 using DataConnect.Validator;
-using System.Security.Cryptography;
 
 namespace DataConnect.Routes;
 
@@ -112,33 +111,5 @@ public static class DBDataTransfer
         await Response.SendAsString(ctx, false, "OK", 200, [.. metadata]);
         metadata.ForEach(x => x.Dispose());
         metadata.Clear();
-    }
-
-    public static async Task GetTestEncrypt(HttpContextBase ctx, string authSecret)
-    {
-        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
-        if (!request.IsOk) {
-            await Response.BadRequest(ctx);
-            return;
-        }
-        
-        using var requestBody = request.Value;
-        string encrypted = Encryption.SymmetricEncryptAES256(requestBody.ConnectionInfo, Encryption.Sha256(authSecret));
-        
-        await Response.SendAsString(ctx, false, encrypted, 200);
-    }
-
-    public static async Task GetTestDecrypt(HttpContextBase ctx, string authSecret)
-    {
-        var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
-        if (!request.IsOk) {
-            await Response.BadRequest(ctx);
-            return;
-        }
-        
-        using var requestBody = request.Value;
-        string encrypted = Encryption.SymmetricDecryptAES256(requestBody.ConnectionInfo, Encryption.Sha256(authSecret));
-        
-        await Response.SendAsString(ctx, false, encrypted, 200);
     }
 }

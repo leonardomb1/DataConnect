@@ -1,4 +1,3 @@
-using System.Text.Json;
 using DataConnect.Shared;
 using DataConnect.Models;
 using WatsonWebserver.Core;
@@ -13,7 +12,7 @@ public class Server : IDisposable
 {
     private bool _disposed;
     private readonly int _port;
-    private readonly bool _ssl = true;
+    private readonly bool _ssl = false;
     private readonly WebserverLite _server;
 
     public Server(int port,

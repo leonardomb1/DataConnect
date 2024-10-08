@@ -22,7 +22,7 @@ public static class RequestValidate
     public static bool ContainsCorrectHeader(HttpContextBase ctx, string[] headers) => 
         headers.Select(ctx.Request.HeaderExists).All(x => x == true);
     
-    public static bool IsValidJson(dynamic json)
+    public static bool IsValidJson(string json)
     {
         string value = Convert.ToString(json);
 
@@ -38,7 +38,7 @@ public static class RequestValidate
             return false;
         }
     }
-    public static bool IsValidDeserialized<T>(dynamic json)
+    public static bool IsValidDeserialized<T>(string json)
     {
         try
         {

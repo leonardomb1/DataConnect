@@ -1,6 +1,5 @@
 using System.Data;
 using WatsonWebserver.Core;
-using System.Text.Json.Nodes;
 using DataConnect.Etl.Sql;
 using DataConnect.Etl.Converter;
 using DataConnect.Etl.Templates;
@@ -15,6 +14,7 @@ namespace DataConnect.Routes;
 
 public static class StouApi
 {
+    private static readonly string _innerJsonName = "itens";
     public static async Task StouEspelho(HttpContextBase ctx,
                                               string conStr,
                                               string database,
@@ -22,90 +22,92 @@ public static class StouApi
                                               int threadTimeout,
                                               HttpSender sender) 
     {
+        Log.Out(
+            $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
+            $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
+        ); 
+
         var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
         }
-        
-        using var requestBody = request.Value;
-        
-        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) {
+              
+        if (!int.TryParse(request.Value.Options[4], out int lookBackTime)) {
             await Response.BadRequest(ctx);
             return;
         }
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
-        
-        // Realiza-se primeira chamada para resgatar quantidade de páginas.
-        var firstReturn = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
-            BuildPayload(
-                requestBody.Options, 
-                requestBody.DestinationTableName, 
-                filteredDate, 
-                ["dtde", "dtate"], 
-                1
-            ), 
-            System.Net.Http.HttpMethod.Post,
-            request.Value.ConnectionInfo
-        ]);
+
+        var firstReturn = await RestTemplate.TemplateRequestHandler(
+            ctx,
+            async () => await sender.SimpleAuthBodyRequestAsync(
+                BuildPayload(
+                    request.Value.Options, 
+                    request.Value.DestinationTableName, 
+                    filteredDate, 
+                    ["dtde", "dtate"], 
+                    1
+                ),
+                System.Net.Http.HttpMethod.Post,
+                request.Value.ConnectionInfo
+            )
+        );
         if (!firstReturn.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send request, {firstReturn.Error.ExceptionMessage}");
         }
-
-        Result<DataTable, Error> tableAttempt = DynamicObjConvert.FromInnerJsonToDataTable(firstReturn.Value, "itens");
-        if (!tableAttempt.IsOk) {
+        var test = firstReturn.Value[_innerJsonName]!;
+        var table = DynamicObjConvert.JsonToDataTable(test);
+        if (!table.IsOk) {
             await Response.InternalServerError(ctx);
-            Log.Out($"Error while attempting to process JSON return, {tableAttempt.Error.ExceptionMessage}");
+            Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
+            return;
         }
-
-        using DataTable table = tableAttempt.Value;
-        tableAttempt.Value.Dispose();
-        table.Rows.Clear();
+        table.Value.Clear();
 
         SqlServerCall firstCall = new(conStr);
-        await firstCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var create = await firstCall.CreateTable(table.Value, request.Value.DestinationTableName, request.Value.SysName, database);
+        if (!create.IsOk) {
+            await Response.InternalServerError(ctx);
+            Log.Out($"Error while attempting to send request, {create.Error.ExceptionMessage}");
+            return;
+        }
         firstCall.Dispose();
 
-        Result<JsonObject, Error> firstJson = RequestValidate.GetDeserialized<JsonObject>(firstReturn.Value);
-        if (!firstJson.IsOk) {
-            await Response.InternalServerError(ctx);
-            Log.Out($"Error while attempting to send request, {firstJson.Error.ExceptionMessage}");
-        }
-
-        int pageCount = firstJson.Value["totalCount"]?.GetValue<int>() ?? 0;
+        int pageCount = firstReturn.Value["totalCount"]?.GetValue<int>() ?? 0;
 
         Log.Out(
-            $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
+            $"Starting extraction job {ctx.Request.Guid} for {request.Value.DestinationTableName}\n" +
             $"  - Looking back since: {filteredDate}\n" +
             $"  - Page count: {pageCount}"
         );
 
         // Extração em multi-thread da API.
         // Realiza-se chamada em threads para cada página até o limite em variável de ambiente.
-        const string ApiAuthMethod = "SimpleAuthBodyRequestAsync";
-        const string InnerProp = "itens";
         var extract = await PaginatedExtractTemplate.PaginatedApiToSqlDatabase(
             ctx,
-            sender,
-            conStr,
-            requestBody,
-            table,
-            page => BuildPayload(
-                requestBody.Options, 
-                requestBody.DestinationTableName, 
-                filteredDate, 
-                ["dtde", "dtate"], 
-                page
+            async (page) => await sender.SimpleAuthBodyRequestAsync(
+                BuildPayload(
+                    request.Value.Options, 
+                    request.Value.DestinationTableName, 
+                    filteredDate, 
+                    ["dtde", "dtate"],
+                    page
+                ),
+                System.Net.Http.HttpMethod.Post,
+                request.Value.ConnectionInfo
             ),
-            threadPagination,
+            table.Value,
+            conStr,
+            _innerJsonName,
+            request.Value.SysName,
+            request.Value.DestinationTableName,
             pageCount,
-            ApiAuthMethod,
-            InnerProp,
-            threadTimeout,
-            request.Value.ConnectionInfo,
-            database
+            threadPagination,
+            threadTimeout
         );
+
         if(!extract.IsOk) {
             await Response.MultiStatus(
                 ctx,
@@ -135,60 +137,68 @@ public static class StouApi
 
     public static async Task StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
+        Log.Out(
+            $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
+            $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
+        ); 
+
         var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
         }
-        
-        using var requestBody = request.Value;
-        
-        if (!int.TryParse(requestBody.Options[4], out int lookBackTime)) {
+              
+        if (!int.TryParse(request.Value.Options[4], out int lookBackTime)) {
             await Response.BadRequest(ctx);
             return;
         }
+
         var filteredDate = $"{DateTime.Today.AddDays(-lookBackTime):dd/MM/yyyy}";
 
         Log.Out(
-            $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n" +
+            $"Starting extraction job {ctx.Request.Guid} for {request.Value.DestinationTableName}\n" +
             $"  - Looking back since: {filteredDate}"
         );
 
-        Result<dynamic, Error> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
-            BuildPayload(
-                requestBody.Options, 
-                requestBody.DestinationTableName, 
-                filteredDate, 
-                ["dtinicio", "dtfim"]
-            ), 
-            System.Net.Http.HttpMethod.Post,
-            request.Value.ConnectionInfo
-        ]);
+        var res = await RestTemplate.TemplateRequestHandler(
+            ctx,
+            async () => await sender.SimpleAuthBodyRequestAsync(
+                BuildPayload(
+                    request.Value.Options, 
+                    request.Value.DestinationTableName, 
+                    filteredDate, 
+                    ["dtinicio", "dtfim"]
+                ),
+                System.Net.Http.HttpMethod.Post,
+                request.Value.ConnectionInfo
+            )
+        );
         if (!res.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send request, {res.Error.ExceptionMessage}");
+            return;
         }
 
-        Result<DataTable, Error> tableAttempt = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
-        if (!tableAttempt.IsOk) {
+        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!.AsObject());
+        if (!table.IsOk) {
             await Response.InternalServerError(ctx);
-            Log.Out($"Error while attempting to process JSON return, {tableAttempt.Error.ExceptionMessage}");
+            Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
+            return;
         }
 
-        using DataTable table = tableAttempt.Value;
-        tableAttempt.Value.Dispose();
-        
         using SqlServerCall serverCall = new(conStr);
-        var create = await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var create = await serverCall.CreateTable(table.Value, request.Value.DestinationTableName, request.Value.SysName, database);
         if (!create.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to create table in server, {create.Error.ExceptionMessage}");
+            return;
         }
 
-        var insert = await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var insert = await serverCall.BulkInsert(table.Value, request.Value.DestinationTableName, request.Value.SysName, database);
         if (!insert.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send data to server, {insert.Error.ExceptionMessage}");
+            return;
         }
 
         Log.Out(
@@ -200,53 +210,60 @@ public static class StouApi
 
     public static async Task StouBasic(HttpContextBase ctx, string conStr, string database, HttpSender sender)
     {
+        Log.Out(
+            $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
+            $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
+        ); 
+
         var request = RequestValidate.GetDeserialized<BodyDefault>(ctx.Request.DataAsString);
         if (!request.IsOk) {
             await Response.BadRequest(ctx);
             return;
         }
         
-        using var requestBody = request.Value;
-
         Log.Out(
-            $"Starting extraction job {ctx.Request.Guid} for {requestBody.DestinationTableName}\n"
+            $"Starting extraction job {ctx.Request.Guid} for {request.Value.DestinationTableName}\n"
         );
 
-        Result<dynamic, Error> res = await RestTemplate.TemplateRequestHandler(ctx, sender, "SimpleAuthBodyRequestAsync", [
-            BuildPayload(
-                requestBody.Options, 
-                requestBody.DestinationTableName, 
-                "01/01/1900", 
-                ["a1", "a2"]
-            ), 
-            System.Net.Http.HttpMethod.Post,
-            request.Value.ConnectionInfo
-        ]);
+       var res = await RestTemplate.TemplateRequestHandler(
+            ctx,
+            async () => await sender.SimpleAuthBodyRequestAsync(
+                BuildPayload(
+                    request.Value.Options, 
+                    request.Value.DestinationTableName, 
+                    "01/01/1900", 
+                    ["a1", "a2"]
+                ), 
+                System.Net.Http.HttpMethod.Post,
+                request.Value.ConnectionInfo
+            )
+        );
         if (!res.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send request, {res.Error.ExceptionMessage}");
+            return;
         }
 
-        Result<DataTable, Error> tableAttempt = DynamicObjConvert.FromInnerJsonToDataTable(res.Value, "itens");
-        if (!tableAttempt.IsOk) {
+        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!.AsObject());
+        if (!table.IsOk) {
             await Response.InternalServerError(ctx);
-            Log.Out($"Error while attempting to process JSON return, {tableAttempt.Error.ExceptionMessage}");
+            Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
+            return;
         }
-
-        using DataTable table = tableAttempt.Value;
-        tableAttempt.Value.Dispose();
         
         using SqlServerCall serverCall = new(conStr);
-        var create = await serverCall.CreateTable(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var create = await serverCall.CreateTable(table.Value, request.Value.DestinationTableName, request.Value.SysName, database);
         if (!create.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to create table in server, {create.Error.ExceptionMessage}");
+            return;
         }
 
-        var insert = await serverCall.BulkInsert(table, requestBody.DestinationTableName, requestBody.SysName, database);
+        var insert = await serverCall.BulkInsert(table.Value, request.Value.DestinationTableName, request.Value.SysName, database);
         if (!insert.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send data to server, {insert.Error.ExceptionMessage}");
+            return;
         }
         Log.Out(
             $"Extraction job {ctx.Request.Guid} has been completed."
