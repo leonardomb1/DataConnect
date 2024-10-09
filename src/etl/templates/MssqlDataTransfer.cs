@@ -187,7 +187,8 @@ public static class MssqlDataTransfer
         var command = new SqlCommand() {
             CommandText = queryData
                 .Where(any => any.QueryType == tableType)
-                .Select(x => x.QueryText).FirstOrDefault()!
+                .Select(x => x.QueryText).FirstOrDefault()!,
+            CommandTimeout = Constants.HourInSeconds
         };
 
         switch ((lineCount, tableType))
@@ -226,7 +227,8 @@ public static class MssqlDataTransfer
         var command = new SqlCommand() {
             CommandText = queryData
                 .Where(any => any.QueryType == Constants.Delete)
-                .Select(x => x.QueryText).FirstOrDefault()!
+                .Select(x => x.QueryText).FirstOrDefault()!,
+            CommandTimeout = Constants.HourInSeconds
         };
 
         switch ((lineCount, tableType))
