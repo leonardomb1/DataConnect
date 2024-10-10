@@ -23,6 +23,7 @@ public class Server : IDisposable
                   int packetSize,
                   string authSecret,
                   int maxTableCount,
+                  int fieldCharLimit,
                   IHttpClientFactory clientFactory)
     {
         _port = port;
@@ -32,15 +33,15 @@ public class Server : IDisposable
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes);
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
                 var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout, httpSender);
+                return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout, fieldCharLimit, httpSender);
         });
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) => {
                 var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouBasic(ctx, conStr, database, httpSender);
+                return StouApi.StouBasic(ctx, conStr, database, fieldCharLimit, httpSender);
         });
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) => {
                 var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouAssinaturaEspelho(ctx, conStr, database, httpSender);
+                return StouApi.StouAssinaturaEspelho(ctx, conStr, database, fieldCharLimit, httpSender);
         });
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", async (HttpContextBase ctx) => {
                 await DBDataTransfer.ScheduledMssql(ctx, conStr, maxTableCount, packetSize, authSecret);

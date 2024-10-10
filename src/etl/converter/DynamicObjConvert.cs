@@ -8,14 +8,13 @@ namespace DataConnect.Etl.Converter;
 
 public static class DynamicObjConvert
 {
-    public static Result<DataTable, Error> JsonToDataTable(JsonNode obj)
+    public static Result<DataTable, Error> JsonToDataTable(JsonNode obj, int fieldCharLimit)
     {
-        JsonArray array = obj.AsArray();
-        JsonObject firstObject = array[0]!.AsObject();
-
-        var table = new DataTable();
-
         try {
+            JsonArray array = obj.AsArray();
+            JsonObject firstObject = array[0]!.AsObject();
+
+            var table = new DataTable();
             foreach (var property in firstObject) {
                 table.Columns.Add(property.Key);
             }
@@ -26,13 +25,24 @@ public static class DynamicObjConvert
                     if (!table.Columns.Contains(property.Key)) {
                         table.Columns.Add(property.Key);
                     }
-                    row[property.Key] = property.Value?.ToString() ?? "";
+                    var value = property.Value?.ToString() ?? "";
+                    if (value.Length > fieldCharLimit) {
+                        value = value[..fieldCharLimit];
+                    }
+                    row[property.Key] = value;
                 }
+
+                foreach (DataColumn column in table.Columns) {
+                    if (!json.ContainsKey(column.ColumnName)) {
+                        row[column.ColumnName] = DBNull.Value;
+                    }
+                }
+
                 table.Rows.Add(row);
             }
             return table;
         } catch (Exception ex) {
             return new Error() { ExceptionMessage = $"Error while attempting to parse JSON into DataTable, {ex.Message}" };
         }
-    } 
+    }
 }

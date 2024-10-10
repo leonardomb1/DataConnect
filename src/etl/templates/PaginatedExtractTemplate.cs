@@ -22,7 +22,8 @@ public static class PaginatedExtractTemplate
                                                                            string tableName,
                                                                            int pageCount,
                                                                            int threadPagination,
-                                                                           int threadTimeout)
+                                                                           int threadTimeout,
+                                                                           int fieldCharLimit)
     {
         using var serverCall = new SqlServerCall(conStr);
         var options = new ParallelOptions { MaxDegreeOfParallelism = threadPagination };
@@ -56,7 +57,7 @@ public static class PaginatedExtractTemplate
                 if (res.IsOk) {
                     var columnMap = table.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToArray();
 
-                    var rawDataAttempt = DynamicObjConvert.JsonToDataTable(res.Value[innerProp]!);
+                    var rawDataAttempt = DynamicObjConvert.JsonToDataTable(res.Value[innerProp]!, fieldCharLimit);
                     if (!rawDataAttempt.IsOk) {
                         errCount++;
                         Log.Out($"Error occured at page : {page}, message: {rawDataAttempt.Error.ExceptionMessage}");
