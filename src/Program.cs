@@ -35,6 +35,7 @@ public class Program
         int threadPagination = 0;
         int packetSize = 0;
         int maxTableCount = 0;
+        int fieldCharLimit = 0;
         string connection = "";
         string database = "";
         string authSecret = "";
@@ -48,7 +49,8 @@ public class Program
                 "THREAD_TIMEOUT",
                 "PACKET_SIZE",
                 "AUTH_SECRET",
-                "MAX_TABLE_COUNT"
+                "MAX_TABLE_COUNT",
+                "TABLE_FIELD_MAX_CHAR_COUNT"
             };
 
             Dictionary<string, string?> config = envs.ToDictionary(
@@ -68,6 +70,7 @@ public class Program
             packetSize = int.Parse(config[envs[5]]!);
             authSecret = config[envs[6]]!;
             maxTableCount = int.Parse(config[envs[7]]!);
+            fieldCharLimit = int.Parse(config[envs[8]]!);
         } else {
             if (args.Length < 3) {
                 Console.WriteLine(
@@ -84,21 +87,40 @@ public class Program
             packetSize = int.Parse(args[6]);
             authSecret = args[7];
             maxTableCount = int.Parse(args[8]);
+            fieldCharLimit = int.Parse(args[9]);
         }
 
-        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout, packetSize, authSecret, maxTableCount).Build();
+        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout, packetSize, authSecret, maxTableCount, fieldCharLimit).Build();
         using var server = host.Services.GetRequiredService<Server>();
         server.Start();
         Console.Read();
     }
-    public static IHostBuilder CreateHostBuilder(string[] args, int port, string connection, string database, int threadPagination, int threadTimeout, int packetSize, string authSecret, int maxTableCount) =>
+    public static IHostBuilder CreateHostBuilder(string[] args,
+                                                 int port,
+                                                 string connection,
+                                                 string database,
+                                                 int threadPagination,
+                                                 int threadTimeout,
+                                                 int packetSize,
+                                                 string authSecret,
+                                                 int maxTableCount,
+                                                 int fieldCharLimit) =>
                 Host.CreateDefaultBuilder(args)
                     .ConfigureLogging(logging => {
                         logging.ClearProviders();
                     })
                     .ConfigureServices((_, services) =>
                         services.AddHttpClient()
-                                .AddSingleton(new Server(port, connection, database, threadPagination, threadTimeout, packetSize, authSecret, maxTableCount, services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
+                                .AddSingleton(new Server(port,
+                                                         connection,
+                                                         database,
+                                                         threadPagination,
+                                                         threadTimeout,
+                                                         packetSize,
+                                                         authSecret,
+                                                         maxTableCount,
+                                                         fieldCharLimit,
+                                                         services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
     private static void ShowHelp() 
     {
         ShowSignature();
@@ -109,7 +131,7 @@ public class Program
             "   -v --version   Show version information\n" +
             "   -e --environment    [Options]  Use configuration variables\n\n" +
             "   [Options]: \n" +
-            "   Port, ConnectionString, ExportDB, ThreadPagination, ThreadTimeout, PacketSize, AuthSecret, maxTableCount"
+            "   Port, ConnectionString, ExportDB, ThreadPagination, ThreadTimeout, PacketSize, AuthSecret, maxTableCount, fieldCharLimit"
             );
     }
 

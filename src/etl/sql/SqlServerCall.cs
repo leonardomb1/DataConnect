@@ -38,10 +38,7 @@ public class SqlServerCall : IDisposable
         }
     }
 
-    public async Task<Result<int, Error>> CreateTable(DataTable table,
-                                  string tableName,
-                                  string sysName,
-                                  string? database = null)
+    public async Task<Result<int, Error>> CreateTable(DataTable table, string tableName, string sysName, string? database = null)
     {
         if (!await IsCreated(tableName, database))
         {
@@ -54,9 +51,9 @@ public class SqlServerCall : IDisposable
 
             foreach (DataColumn column in table.Columns)
             {
-                createTableQuery += $"[{column.ColumnName}] NVARCHAR(MAX), ";
+                createTableQuery += $"[{column.ColumnName}] {MapDataType(column.DataType)}, ";
             }
-            createTableQuery += $"ID_DW_{tableName.ToUpper()} INT NOT NULL IDENTITY(1,1) CONSTRAINT IX_{tableName.ToUpper()}_SK PRIMARY KEY, ";
+            createTableQuery += $"ID_DW_{tableName.ToUpper()} INT NOT NULL IDENTITY(1,1) CONSTRAINT IX_{tableName.ToUpper()}_SK PRIMARY KEY CLUSTERED, ";
             createTableQuery += $"DT_UPDATE_{tableName.ToUpper()} DATETIME NOT NULL CONSTRAINT CK_UPDATE_{tableName.ToUpper()} DEFAULT(GETDATE()));";
             cmd.CommandText = createTableQuery;
 
@@ -69,10 +66,28 @@ public class SqlServerCall : IDisposable
             {
                 return new Error() { ExceptionMessage = ex.Message }; 
             }
-        } else {
+        }
+        else
+        {
             Log.Out($"Table {tableName.ToUpper()} already exists.");
             return Constants.MethodSuccess;
         }
+    }
+
+    private static string MapDataType(Type type)
+    {
+        return type switch
+        {
+            _ when type == typeof(string) => "NVARCHAR(MAX)",
+            _ when type == typeof(int) => "INT",
+            _ when type == typeof(long) => "BIGINT",
+            _ when type == typeof(float) => "FLOAT",
+            _ when type == typeof(double) => "FLOAT",
+            _ when type == typeof(decimal) => "DECIMAL(18, 2)",
+            _ when type == typeof(bool) => "BIT",
+            _ when type == typeof(DateTime) => "DATETIME",
+            _ => "NVARCHAR(MAX)"
+        };
     }
 
     public async Task<Result<DataTable, Error>> GetTableDataFromServer(string query, string? database = null)

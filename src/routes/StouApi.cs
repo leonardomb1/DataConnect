@@ -20,6 +20,7 @@ public static class StouApi
                                               string database,
                                               int threadPagination,
                                               int threadTimeout,
+                                              int fieldCharLimit,
                                               HttpSender sender) 
     {
         Log.Out(
@@ -57,8 +58,8 @@ public static class StouApi
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to send request, {firstReturn.Error.ExceptionMessage}");
         }
-        var test = firstReturn.Value[_innerJsonName]!;
-        var table = DynamicObjConvert.JsonToDataTable(test);
+        var innerJson = firstReturn.Value[_innerJsonName]!;
+        var table = DynamicObjConvert.JsonToDataTable(innerJson, fieldCharLimit);
         if (!table.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
@@ -105,7 +106,8 @@ public static class StouApi
             request.Value.DestinationTableName,
             pageCount,
             threadPagination,
-            threadTimeout
+            threadTimeout,
+            fieldCharLimit
         );
 
         if(!extract.IsOk) {
@@ -135,7 +137,7 @@ public static class StouApi
         await Response.Ok(ctx);
     }
 
-    public static async Task StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, HttpSender sender)
+    public static async Task StouAssinaturaEspelho(HttpContextBase ctx, string conStr, string database, int fieldCharLimit, HttpSender sender)
     {
         Log.Out(
             $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
@@ -179,7 +181,7 @@ public static class StouApi
             return;
         }
 
-        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!);
+        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!, fieldCharLimit);
         if (!table.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
@@ -208,7 +210,7 @@ public static class StouApi
         await Response.Ok(ctx);
     }
 
-    public static async Task StouBasic(HttpContextBase ctx, string conStr, string database, HttpSender sender)
+    public static async Task StouBasic(HttpContextBase ctx, string conStr, string database, int fieldCharLimit, HttpSender sender)
     {
         Log.Out(
             $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " + 
@@ -244,7 +246,7 @@ public static class StouApi
             return;
         }
 
-        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!);
+        Result<DataTable, Error> table = DynamicObjConvert.JsonToDataTable(res.Value[_innerJsonName]!, fieldCharLimit);
         if (!table.IsOk) {
             await Response.InternalServerError(ctx);
             Log.Out($"Error while attempting to process JSON return, {table.Error.ExceptionMessage}");
