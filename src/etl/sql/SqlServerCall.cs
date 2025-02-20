@@ -23,17 +23,20 @@ public class SqlServerCall : IDisposable
                                     string? database = null)
     {
         await ChangeDatabase(database);
-        
-        using SqlBulkCopy bulkCopy = new(_connection) 
+
+        using SqlBulkCopy bulkCopy = new(_connection)
         {
             BulkCopyTimeout = 1000,
             DestinationTableName = $"{sysName.ToUpper()}.{tableName.ToUpper()}"
         };
-            
-        try {
+
+        try
+        {
             await bulkCopy.WriteToServerAsync(table);
             return Constants.MethodSuccess;
-        } catch (Exception ex) {
+        }
+        catch (Exception ex)
+        {
             return new Error { ExceptionMessage = ex.Message };
         }
     }
@@ -43,7 +46,7 @@ public class SqlServerCall : IDisposable
         if (!await IsCreated(tableName, database))
         {
             await ChangeDatabase(database);
-            
+
             Log.Out($"Failed to find table {sysName.ToUpper()}.{tableName.ToUpper()}, proceeding with creation...");
             using SqlCommand cmd = new("", _connection);
 
@@ -64,7 +67,7 @@ public class SqlServerCall : IDisposable
             }
             catch (Exception ex)
             {
-                return new Error() { ExceptionMessage = ex.Message }; 
+                return new Error() { ExceptionMessage = ex.Message };
             }
         }
         else
@@ -96,28 +99,32 @@ public class SqlServerCall : IDisposable
 
         DataTable data = new();
 
-        using SqlCommand cmd = new() {
+        using SqlCommand cmd = new()
+        {
             Connection = _connection,
             CommandText = query
         };
 
-        try {
+        try
+        {
             var reader = await cmd.ExecuteReaderAsync();
             data.Load(reader);
             return data;
-        } 
-        catch (Exception ex) {
+        }
+        catch (Exception ex)
+        {
             return new Error() { ExceptionMessage = ex.Message };
         }
     }
 
     public async Task<Result<int, Error>> ExecuteCommand(SqlCommand cmd, string? database = null)
     {
-        await ChangeDatabase(database);     
+        await ChangeDatabase(database);
 
         cmd.Connection = _connection;
 
-        try {
+        try
+        {
             await cmd.ExecuteNonQueryAsync();
             return Constants.MethodSuccess;
         }
@@ -136,7 +143,8 @@ public class SqlServerCall : IDisposable
                                                                  int extractionId,
                                                                  string? database = null)
     {
-        using var cmd = new SqlCommand() {
+        using var cmd = new SqlCommand()
+        {
             CommandText = query,
             Connection = _connection,
             CommandTimeout = 1200
@@ -162,8 +170,9 @@ public class SqlServerCall : IDisposable
                     row[i] = reader.GetValue(i);
                 }
                 table.Rows.Add(row);
-                
-                if (logLineCount == 10000) {
+
+                if (logLineCount == 10000)
+                {
                     Log.Out(
                         $"Reading packet data from reader array:\n" +
                         $"  - Current table {sysName}.{tableName} line count: {table.Rows.Count} lines."
@@ -186,21 +195,19 @@ public class SqlServerCall : IDisposable
                     {
                         attempt++;
                         innerInsert = await homeServer.BulkInsert(table, tableName, sysName, database);
-                        if (!innerInsert.IsOk) {
+                        if (!innerInsert.IsOk)
+                        {
                             Log.Out(
-                                $"Error while attempting to transfer data from packet: {innerInsert.Error.ExceptionMessage}.\n" +  
+                                $"Error while attempting to transfer data from packet: {innerInsert.Error.ExceptionMessage}.\n" +
                                 $"- Attempt {attempt} - out of 5\n    - Table: {sysName}.{tableName}"
                             );
                         }
                     } while (!innerInsert.IsOk && attempt < 5);
 
-                    if (!innerInsert.IsOk) {
-                        await Log.ToServer(
-                            $"Table insert attempt has reached maximum attempt count. Table: {sysName}.{tableName}",
-                            executionId,
-                            extractionId,
-                            Constants.LogErrorExecute,
-                            homeServer
+                    if (!innerInsert.IsOk)
+                    {
+                        Log.Out(
+                            $"Table insert attempt has reached maximum attempt count. Table: {sysName}.{tableName}"
                         );
                         return new Error() { ExceptionMessage = $"Error attempting to insert data to server: {innerInsert.Error.ExceptionMessage}" };
                     }
@@ -210,7 +217,8 @@ public class SqlServerCall : IDisposable
                 }
             }
 
-            if (table.Rows.Count > 0) {
+            if (table.Rows.Count > 0)
+            {
                 Result<int, Error> outerInsert;
                 int attempt = 0;
 
@@ -218,21 +226,19 @@ public class SqlServerCall : IDisposable
                 {
                     attempt++;
                     outerInsert = await homeServer.BulkInsert(table, tableName, sysName, database);
-                    if (!outerInsert.IsOk) {
+                    if (!outerInsert.IsOk)
+                    {
                         Log.Out(
-                            $"Error while attempting to transfer data from packet: {outerInsert.Error.ExceptionMessage}.\n" +  
+                            $"Error while attempting to transfer data from packet: {outerInsert.Error.ExceptionMessage}.\n" +
                             $"- Attempt {attempt} - out of 5\n    - Table: {sysName}.{tableName}"
                         );
                     }
                 } while (!outerInsert.IsOk && attempt < 5);
 
-                if (!outerInsert.IsOk) {
-                    await Log.ToServer(
-                        $"Table insert attempt has reached maximum attempt count. Table: {sysName}.{tableName}",
-                        executionId,
-                        extractionId,
-                        Constants.LogErrorExecute,
-                        homeServer
+                if (!outerInsert.IsOk)
+                {
+                    Log.Out(
+                        $"Table insert attempt has reached maximum attempt count. Table: {sysName}.{tableName}"
                     );
                     return new Error() { ExceptionMessage = $"Error attempting to insert data to server: {outerInsert.Error.ExceptionMessage}" };
                 }
@@ -241,16 +247,14 @@ public class SqlServerCall : IDisposable
         }
         catch (Exception ex)
         {
-            await Log.ToServer(
-                $"Error while attempting insert: {ex.Message}",
-                executionId,
-                extractionId,
-                Constants.LogErrorExecute,
-                homeServer
+            Log.Out(
+                $"Error while attempting insert: {ex.Message}"
             );
             return new Error() { ExceptionMessage = ex.Message };
-        } finally {
-            if (reader!= null &&!reader.IsClosed)
+        }
+        finally
+        {
+            if (reader != null && !reader.IsClosed)
             {
                 reader.Close();
             }
@@ -261,17 +265,19 @@ public class SqlServerCall : IDisposable
     {
         await ChangeDatabase(database);
 
-        using SqlCommand cmd = new() {
+        using SqlCommand cmd = new()
+        {
             CommandText = query,
             Connection = _connection
         };
 
-        try {
+        try
+        {
             var ret = await cmd.ExecuteScalarAsync() ?? "0";
             return int.Parse(ret.ToString()!);
         }
         catch (Exception ex)
-        {      
+        {
             Log.Out($"Error while fetching data from server: {ex.Message}, command text: {cmd.CommandText}");
             return new Error() { ExceptionMessage = ex.Message };
         }
@@ -282,14 +288,15 @@ public class SqlServerCall : IDisposable
         if (database != null)
         {
             await _connection.ChangeDatabaseAsync(database);
-        }  
+        }
     }
 
     private async Task<bool> IsCreated(string tableName, string? database = null)
     {
-        await ChangeDatabase(database);      
+        await ChangeDatabase(database);
 
-        using SqlCommand cmd = new() {
+        using SqlCommand cmd = new()
+        {
             CommandText = $"SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName.ToUpper()}'",
             Connection = _connection
         };
@@ -306,11 +313,13 @@ public class SqlServerCall : IDisposable
 
     private void Dispose(bool disposing)
     {
-        if (!_disposed) {
+        if (!_disposed)
+        {
             return;
         }
 
-        if (disposing) {
+        if (disposing)
+        {
             _connection.Close();
             _connection.Dispose();
         }

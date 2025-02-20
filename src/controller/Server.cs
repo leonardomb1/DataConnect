@@ -31,23 +31,20 @@ public class Server : IDisposable
         _server = new WebserverLite(new WebserverSettings("*", _port, _ssl), NotFound);
         _server.Routes.AuthenticateRequest = (HttpContextBase ctx) => Authenticate(ctx, authSecret);
         _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.GET, "/api", GetRoutes);
-        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) => {
-                var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout, fieldCharLimit, httpSender);
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_espelho", (HttpContextBase ctx) =>
+        {
+            var httpSender = new HttpSender(clientFactory);
+            return StouApi.StouEspelho(ctx, conStr, database, threadPagination, threadTimeout, fieldCharLimit, httpSender);
         });
-        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) => {
-                var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouBasic(ctx, conStr, database, fieldCharLimit, httpSender);
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/configuracao_competencia", (HttpContextBase ctx) =>
+        {
+            var httpSender = new HttpSender(clientFactory);
+            return StouApi.StouBasic(ctx, conStr, database, fieldCharLimit, httpSender);
         });
-        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) => {
-                var httpSender = new HttpSender(clientFactory);
-                return StouApi.StouAssinaturaEspelho(ctx, conStr, database, fieldCharLimit, httpSender);
-        });
-        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/sql", async (HttpContextBase ctx) => {
-                await DBDataTransfer.ScheduledMssql(ctx, conStr, maxTableCount, packetSize, authSecret);
-        });
-        _server.Routes.PostAuthentication.Parameter.Add(WatsonWebserver.Core.HttpMethod.GET, "/api/sql/{systemId}/{scheduleId}", async (HttpContextBase ctx) => {
-                await DBDataTransfer.GetScheduleByScheduleId(ctx, conStr);
+        _server.Routes.PostAuthentication.Static.Add(WatsonWebserver.Core.HttpMethod.POST, "/api/custom/ponto_assinatura_espelho", (HttpContextBase ctx) =>
+        {
+            var httpSender = new HttpSender(clientFactory);
+            return StouApi.StouAssinaturaEspelho(ctx, conStr, database, fieldCharLimit, httpSender);
         });
     }
 
@@ -63,9 +60,9 @@ public class Server : IDisposable
             $"Receiving {ctx.Request.Method} request for a non-existent resource " +
             $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
         );
-        
+
         await Response.NotFound(ctx);
-        
+
         Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
     }
 
@@ -74,7 +71,7 @@ public class Server : IDisposable
         string validate = Encryption.Sha256(authSecret + $"{DateTime.Today:dd/MM/yyyy}");
         try
         {
-            if(!RequestValidate.ContainsCorrectHeader(ctx, ["token"])) await NotAuthorized(ctx);
+            if (!RequestValidate.ContainsCorrectHeader(ctx, ["token"])) await NotAuthorized(ctx);
             string token = ctx.Request.Headers.GetValues("token")![0];
             if (token != validate) await NotAuthorized(ctx);
         }
@@ -90,13 +87,13 @@ public class Server : IDisposable
         Log.Out($"Unauthorized request by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}.");
     }
 
-    private static async Task GetRoutes(HttpContextBase ctx) 
+    private static async Task GetRoutes(HttpContextBase ctx)
     {
         Log.Out(
             $"Receiving {ctx.Request.Method} request for {ctx.Request.Url.RawWithoutQuery} " +
             $"by {ctx.Request.Source.IpAddress}:{ctx.Request.Source.Port}"
         );
-        
+
         string[] routes = [
             "POST /api/custom/ponto_espelho",
             "POST /api/custom/configuracao_competencia",
@@ -104,9 +101,9 @@ public class Server : IDisposable
             "POST /api/sql",
             "GET  /api"
         ];
-        
+
         await Response.SendAsString(ctx, false, "Refer to the following options.", 200, null, routes);
-        
+
         Log.Out($"Response to {ctx.Guid} was: {ctx.Response.StatusCode} - {ctx.Response.StatusDescription}");
     }
     public void Dispose()
@@ -117,12 +114,14 @@ public class Server : IDisposable
 
     private void Dispose(bool disposing)
     {
-        if (!_disposed) {
+        if (!_disposed)
+        {
             return;
         }
 
-        if (disposing) {
-           _server.Dispose();
+        if (disposing)
+        {
+            _server.Dispose();
         }
 
         _disposed = true;
