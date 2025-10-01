@@ -1,61 +1,24 @@
 services:
-  runner1: &runner
-    container_name: runner1
-    hostname: dataconnect_runner1
-    image: registry-gitlab.ripbr.com.br/ti-dados/dataconnect:main
-    networks:
-      - dataconnect
-    dns:
-      - 10.247.81.10
-    dns_search: mykaefer.com
-    dns_opt:
-      - ndots:15
-    environment:
-      - DW_CONNECTIONSTRING=${DW_CONNECTIONSTRING}
-      - PORT_TO_USE=${PORT_TO_USE}
-      - EXPORT_DATABASE=${EXPORT_DATABASE}
-      - THREAD_PAGINATION=${THREAD_PAGINATION}
-      - THREAD_TIMEOUT=${THREAD_TIMEOUT}
-      - PACKET_SIZE=${PACKET_SIZE}
-      - AUTH_SECRET=${AUTH_SECRET}
-      - MAX_TABLE_COUNT=${MAX_TABLE_COUNT}
+  dataconnect:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "40000:40000"
+    volumes:
+      - ./appsettings.json:/app/appsettings.json:ro
+    restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 10G
+          memory: 8G
+          cpus: '2.0'
         reservations:
-          memory: 256M
-    tty: true
-    stdin_open: true
-
-  runner2:
-    <<: *runner
-    container_name: runner2
-    hostname: dataconnect_runner2
-      
-  runner3:
-    <<: *runner
-    container_name: runner3
-    hostname: dataconnect_runner3
-    
-  nginx:
-    image: nginx:latest
-    networks:
-      - dataconnect
-    dns:
-      - 10.247.81.10
-    dns_search: mykaefer.com
-    dns_opt:
-      - ndots:15
-    ports:
-      - "10000:80"
-    volumes:
-      - /mnt/storage-docker/volumes/nginx:/etc/nginx:ro
-    depends_on:
-      - runner1
-      - runner2
-      - runner3
-
-networks:
-  dataconnect:
-    driver: bridge
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:40000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

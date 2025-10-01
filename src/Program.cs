@@ -1,150 +1,43 @@
-using DataConnect.Controller;
-using DataConnect.Shared;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using DataConnect.Features.DataExtraction.Services;
+using DataConnect.Features.Authentication.Services;
+using DataConnect.Features.HealthCheck.Services;
+using DataConnect.Infrastructure.Json;
+using DataConnect.Features.Api;
 
-namespace DataConnect;
+var builder = WebApplication.CreateBuilder(args);
 
-public class Program
+// Add feature services
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<IJsonDataTableConverter, JsonDataTableConverter>();
+builder.Services.AddScoped<IDataExtractionService, DataExtractionService>();
+builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<IHealthCheckService, HealthCheckService>();
+
+// Add OpenAPI/Swagger
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
 {
-    public static void Main(string[] args)
-    {
-        if (args.Contains("--help") || args.Contains("-h")) {
-            ShowHelp();
-            return;
-        }
+    c.SwaggerDoc("v1", new() { Title = "DataConnect API", Version = "v1.0.2" });
+});
 
-        if (args.Contains("--version") || args.Contains("-v")) {
-            ShowVersion();
-            return;
-        }
+// Add logging
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
 
-        bool isCmd = 
-                    args.Contains("--environment") || 
-                    args.Contains("-e") || 
-                    args.Length > 0;
+var app = builder.Build();
 
-        Run(isCmd, args);
-    }
-
-    private static void Run(bool isCmd, string[] args)
-    {
-        int port = 0;
-        int threadTimeout = 0;
-        int threadPagination = 0;
-        int packetSize = 0;
-        int maxTableCount = 0;
-        int fieldCharLimit = 0;
-        string connection = "";
-        string database = "";
-        string authSecret = "";
-
-        if (!isCmd) {
-            string[] envs = {
-                "PORT_TO_USE", 
-                "DW_CONNECTIONSTRING",
-                "EXPORT_DATABASE",
-                "THREAD_PAGINATION",
-                "THREAD_TIMEOUT",
-                "PACKET_SIZE",
-                "AUTH_SECRET",
-                "MAX_TABLE_COUNT",
-                "TABLE_FIELD_MAX_CHAR_COUNT"
-            };
-
-            Dictionary<string, string?> config = envs.ToDictionary(
-                        env => env,
-                        Environment.GetEnvironmentVariable
-                    );
-
-            if (config.Any(variable => variable.Value is null)) {
-                throw new Exception("Environment variable not configured!");
-            }
-
-            port = int.Parse(config[envs[0]]!);
-            connection = config[envs[1]]!;
-            database = config[envs[2]]!;
-            threadPagination = int.Parse(config[envs[3]]!);
-            threadTimeout = int.Parse(config[envs[4]]!);
-            packetSize = int.Parse(config[envs[5]]!);
-            authSecret = config[envs[6]]!;
-            maxTableCount = int.Parse(config[envs[7]]!);
-            fieldCharLimit = int.Parse(config[envs[8]]!);
-        } else {
-            if (args.Length < 3) {
-                Console.WriteLine(
-                    "Expected:  -e [Options]"
-                );
-                return;
-            }
-            
-            port = int.Parse(args[1]);
-            connection = args[2];
-            database = args[3];
-            threadPagination = int.Parse(args[4]);
-            threadTimeout = int.Parse(args[5]);
-            packetSize = int.Parse(args[6]);
-            authSecret = args[7];
-            maxTableCount = int.Parse(args[8]);
-            fieldCharLimit = int.Parse(args[9]);
-        }
-
-        var host = CreateHostBuilder(args, port, connection, database, threadPagination, threadTimeout, packetSize, authSecret, maxTableCount, fieldCharLimit).Build();
-        using var server = host.Services.GetRequiredService<Server>();
-        server.Start();
-        Console.Read();
-    }
-    public static IHostBuilder CreateHostBuilder(string[] args,
-                                                 int port,
-                                                 string connection,
-                                                 string database,
-                                                 int threadPagination,
-                                                 int threadTimeout,
-                                                 int packetSize,
-                                                 string authSecret,
-                                                 int maxTableCount,
-                                                 int fieldCharLimit) =>
-                Host.CreateDefaultBuilder(args)
-                    .ConfigureLogging(logging => {
-                        logging.ClearProviders();
-                    })
-                    .ConfigureServices((_, services) =>
-                        services.AddHttpClient()
-                                .AddSingleton(new Server(port,
-                                                         connection,
-                                                         database,
-                                                         threadPagination,
-                                                         threadTimeout,
-                                                         packetSize,
-                                                         authSecret,
-                                                         maxTableCount,
-                                                         fieldCharLimit,
-                                                         services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>())));
-    private static void ShowHelp() 
-    {
-        ShowSignature();
-        Console.WriteLine(
-            "Usage: DataConnect [options]\n" +
-            "Options:\n" +
-            "   -h --help      Show this help message\n" +
-            "   -v --version   Show version information\n" +
-            "   -e --environment    [Options]  Use configuration variables\n\n" +
-            "   [Options]: \n" +
-            "   Port, ConnectionString, ExportDB, ThreadPagination, ThreadTimeout, PacketSize, AuthSecret, maxTableCount, fieldCharLimit"
-            );
-    }
-
-    private static void ShowVersion() 
-    {
-        ShowSignature();
-        Console.WriteLine($"DataConnect version ${Constants.ProgramVersion}");
-    }
-
-    private static void ShowSignature() 
-    {
-        Console.WriteLine(
-            "Developed by Leonardo M. Baptista\n"
-        );
-    }
+// Configure pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "DataConnect API v1.0.2"));
 }
+
+// Add authentication middleware
+app.UseMiddleware<AuthenticationMiddleware>();
+
+// Map feature endpoints
+app.MapDataExtractionEndpoints();
+app.MapHealthCheckEndpoints();
+
+app.Run();
