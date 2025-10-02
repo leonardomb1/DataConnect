@@ -122,21 +122,29 @@ public class JsonDataTableConverter : IJsonDataTableConverter
     {
         if (values.Count == 0) return typeof(string);
 
-        var stringValues = values.Select(v => v?.ToString() ?? "").ToList();
+        var stringValues = values.Select(v => v?.ToString() ?? "").Where(v => !string.IsNullOrEmpty(v)).ToList();
+        if (stringValues.Count == 0) return typeof(string);
+
         var totalCount = stringValues.Count;
         var confidenceThreshold = (int)(totalCount * options.TypeConfidenceThreshold);
 
-        // Try integer
+        // Try numeric types (order matters: try larger types first to avoid overflow)
         if (options.InferNumericTypes)
         {
-            var intCount = stringValues.Count(v => int.TryParse(v, out _));
-            if (intCount >= confidenceThreshold)
-                return typeof(int);
-
-            // Try long
+            // Try long first (covers both int and long)
             var longCount = stringValues.Count(v => long.TryParse(v, out _));
             if (longCount >= confidenceThreshold)
-                return typeof(long);
+            {
+                // Check if all values fit in int
+                var allFitInInt = stringValues.All(v =>
+                {
+                    if (long.TryParse(v, out var longVal))
+                        return longVal >= int.MinValue && longVal <= int.MaxValue;
+                    return false;
+                });
+
+                return allFitInInt ? typeof(int) : typeof(long);
+            }
 
             // Try decimal
             var decimalCount = stringValues.Count(v => decimal.TryParse(v, NumberStyles.Number, CultureInfo.InvariantCulture, out _));
@@ -144,21 +152,16 @@ public class JsonDataTableConverter : IJsonDataTableConverter
                 return typeof(decimal);
         }
 
-        // Try boolean
+        // Try boolean (must be exact match to avoid false positives)
         if (options.InferBooleanTypes)
         {
             var boolCount = stringValues.Count(v => bool.TryParse(v, out _));
-            if (boolCount >= confidenceThreshold)
+            if (boolCount == totalCount) // 100% match required for boolean
                 return typeof(bool);
         }
 
-        // Try DateTime
-        if (options.InferDateTypes)
-        {
-            var dateTimeCount = stringValues.Count(v => DateTime.TryParse(v, out _));
-            if (dateTimeCount >= confidenceThreshold)
-                return typeof(DateTime);
-        }
+        // Skip DateTime inference - too many false positives with numeric strings
+        // Always default to string for safety with mixed data
 
         return typeof(string);
     }
@@ -172,22 +175,42 @@ public class JsonDataTableConverter : IJsonDataTableConverter
 
         try
         {
-            if (targetType == typeof(int) && int.TryParse(stringValue, out var intVal))
-                return intVal;
+            if (targetType == typeof(int))
+            {
+                if (int.TryParse(stringValue, out var intVal))
+                    return intVal;
+                return DBNull.Value; // Return NULL for non-parseable values
+            }
 
-            if (targetType == typeof(long) && long.TryParse(stringValue, out var longVal))
-                return longVal;
+            if (targetType == typeof(long))
+            {
+                if (long.TryParse(stringValue, out var longVal))
+                    return longVal;
+                return DBNull.Value;
+            }
 
-            if (targetType == typeof(decimal) && decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var decVal))
-                return decVal;
+            if (targetType == typeof(decimal))
+            {
+                if (decimal.TryParse(stringValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var decVal))
+                    return decVal;
+                return DBNull.Value;
+            }
 
-            if (targetType == typeof(bool) && bool.TryParse(stringValue, out var boolVal))
-                return boolVal;
+            if (targetType == typeof(bool))
+            {
+                if (bool.TryParse(stringValue, out var boolVal))
+                    return boolVal;
+                return DBNull.Value;
+            }
 
-            if (targetType == typeof(DateTime) && DateTime.TryParse(stringValue, out var dateVal))
-                return dateVal;
+            if (targetType == typeof(DateTime))
+            {
+                if (DateTime.TryParse(stringValue, out var dateVal))
+                    return dateVal;
+                return DBNull.Value;
+            }
 
-            // String type or fallback
+            // String type
             if (stringValue.Length > fieldCharLimit)
                 stringValue = stringValue[..fieldCharLimit];
 
@@ -195,11 +218,15 @@ public class JsonDataTableConverter : IJsonDataTableConverter
         }
         catch
         {
-            // Fallback to truncated string
-            if (stringValue.Length > fieldCharLimit)
-                stringValue = stringValue[..fieldCharLimit];
+            // For typed columns, return NULL on error; for string columns, return truncated value
+            if (targetType == typeof(string))
+            {
+                if (stringValue.Length > fieldCharLimit)
+                    stringValue = stringValue[..fieldCharLimit];
+                return stringValue;
+            }
 
-            return stringValue;
+            return DBNull.Value;
         }
     }
 }

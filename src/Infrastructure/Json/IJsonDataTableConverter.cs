@@ -15,8 +15,8 @@ public class SchemaInferenceOptions
 {
     public int FieldCharLimit { get; init; } = 500;
     public bool InferNumericTypes { get; init; } = true;
-    public bool InferDateTypes { get; init; } = true;
+    public bool InferDateTypes { get; init; } = false; // Disabled - too many false positives
     public bool InferBooleanTypes { get; init; } = true;
-    public int SampleSize { get; init; } = 1000; // Sample size for type inference
-    public double TypeConfidenceThreshold { get; init; } = 0.8; // 80% of samples must match type
+    public int SampleSize { get; init; } = 10000; // Larger sample for better accuracy
+    public double TypeConfidenceThreshold { get; init; } = 0.95; // 95% of samples must match type
 }

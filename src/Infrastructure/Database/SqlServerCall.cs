@@ -6,17 +6,35 @@ using Microsoft.Extensions.Logging;
 
 namespace DataConnect.Infrastructure.Database;
 
-public class SqlServerCall : IDisposable
+public class SqlServerCall : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
     private readonly SqlConnection _connection;
     private readonly ILogger<SqlServerCall>? _logger;
+    private bool _isInitialized;
 
-    public SqlServerCall(string conStr, ILogger<SqlServerCall>? logger = null)
+    private SqlServerCall(string conStr, ILogger<SqlServerCall>? logger = null)
     {
-        _connection = new SqlConnection(conStr);
-        _connection.OpenAsync().GetAwaiter().GetResult();
         _logger = logger;
+        _connection = new SqlConnection(conStr);
+    }
+
+    public static async Task<SqlServerCall> CreateAsync(string conStr, ILogger<SqlServerCall>? logger = null)
+    {
+        var instance = new SqlServerCall(conStr, logger);
+        await instance.InitializeAsync();
+        return instance;
+    }
+
+    private async Task InitializeAsync()
+    {
+        if (_isInitialized) return;
+
+        _logger?.LogDebug("Opening SQL connection to {DataSource}", _connection.DataSource);
+        await _connection.OpenAsync();
+        _logger?.LogDebug("SQL connection opened to {DataSource}/{Database}",
+            _connection.DataSource, _connection.Database);
+        _isInitialized = true;
     }
 
     public async Task<Result<int, Error>> BulkInsert(DataTable table,
@@ -26,31 +44,52 @@ public class SqlServerCall : IDisposable
     {
         await ChangeDatabase(database);
 
+        var destinationTable = $"{sysName.ToUpper()}.{tableName.ToUpper()}";
+        _logger?.LogDebug("BulkInsert to {Table}: {RowCount} rows, {ColumnCount} columns",
+            destinationTable, table.Rows.Count, table.Columns.Count);
+
         using SqlBulkCopy bulkCopy = new(_connection)
         {
-            BulkCopyTimeout = 1000,
-            DestinationTableName = $"{sysName.ToUpper()}.{tableName.ToUpper()}"
+            BulkCopyTimeout = 300,  // 5 minutes timeout for large batches
+            DestinationTableName = destinationTable,
+            BatchSize = 1000,
+            EnableStreaming = true
         };
 
         try
         {
             await bulkCopy.WriteToServerAsync(table);
+            _logger?.LogDebug("BulkInsert completed successfully to {Table}", destinationTable);
             return Constants.MethodSuccess;
         }
         catch (Exception ex)
         {
+            _logger?.LogError(ex, "BulkInsert failed to {Table}. Rows: {Rows}, Columns: {Columns}",
+                destinationTable, table.Rows.Count, table.Columns.Count);
             return new Error { ExceptionMessage = ex.Message };
         }
     }
 
     public async Task<Result<int, Error>> CreateTable(DataTable table, string tableName, string sysName, string? database = null)
     {
+        await ChangeDatabase(database);
+
+        // Ensure schema exists
+        var schemaResult = await EnsureSchemaExists(sysName);
+        if (!schemaResult.IsOk)
+        {
+            return schemaResult.Error;
+        }
+
+        _logger?.LogDebug("Checking if table {Schema}.{TableName} exists", sysName.ToUpper(), tableName.ToUpper());
+
         if (!await IsCreated(tableName, database))
         {
-            await ChangeDatabase(database);
+            _logger?.LogInformation("Table {Schema}.{TableName} not found, creating with {ColumnCount} columns",
+                sysName.ToUpper(), tableName.ToUpper(), table.Columns.Count);
 
-            _logger?.LogInformation("Failed to find table {Schema}.{TableName}, proceeding with creation...", sysName.ToUpper(), tableName.ToUpper());
             using SqlCommand cmd = new("", _connection);
+            cmd.CommandTimeout = 300; // 5 minutes for large table creation
 
             string createTableQuery = $"CREATE TABLE {sysName.ToUpper()}.{tableName.ToUpper()} (";
 
@@ -62,20 +101,68 @@ public class SqlServerCall : IDisposable
             createTableQuery += $"DT_UPDATE_{tableName.ToUpper()} DATETIME NOT NULL CONSTRAINT CK_UPDATE_{tableName.ToUpper()} DEFAULT(GETDATE()));";
             cmd.CommandText = createTableQuery;
 
+            _logger?.LogDebug("Executing CREATE TABLE statement ({Length} chars)", createTableQuery.Length);
+
             try
             {
                 await cmd.ExecuteNonQueryAsync();
+                _logger?.LogInformation("Table {Schema}.{TableName} created successfully", sysName.ToUpper(), tableName.ToUpper());
                 return Constants.MethodSuccess;
             }
             catch (Exception ex)
             {
+                _logger?.LogError(ex, "Failed to create table {Schema}.{TableName}", sysName.ToUpper(), tableName.ToUpper());
                 return new Error() { ExceptionMessage = ex.Message };
             }
         }
         else
         {
-            _logger?.LogInformation("Table {TableName} already exists.", tableName.ToUpper());
+            _logger?.LogInformation("Table {Schema}.{TableName} already exists, skipping creation", sysName.ToUpper(), tableName.ToUpper());
             return Constants.MethodSuccess;
+        }
+    }
+
+    private async Task<Result<int, Error>> EnsureSchemaExists(string schemaName)
+    {
+        var schemaUpper = schemaName.ToUpper();
+
+        using SqlCommand checkCmd = new()
+        {
+            CommandText = "SELECT COUNT(*) FROM sys.schemas WHERE name = @SchemaName",
+            Connection = _connection,
+            CommandTimeout = 30
+        };
+        checkCmd.Parameters.AddWithValue("@SchemaName", schemaUpper);
+
+        try
+        {
+            var result = await checkCmd.ExecuteScalarAsync();
+            var count = result != null ? (int)result : 0;
+            if (count == 0)
+            {
+                _logger?.LogInformation("Schema {Schema} does not exist, creating it", schemaUpper);
+
+                using SqlCommand createCmd = new()
+                {
+                    CommandText = $"CREATE SCHEMA {schemaUpper}",
+                    Connection = _connection,
+                    CommandTimeout = 30
+                };
+
+                await createCmd.ExecuteNonQueryAsync();
+                _logger?.LogInformation("Schema {Schema} created successfully", schemaUpper);
+            }
+            else
+            {
+                _logger?.LogDebug("Schema {Schema} already exists", schemaUpper);
+            }
+
+            return Constants.MethodSuccess;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to ensure schema {Schema} exists", schemaUpper);
+            return new Error { ExceptionMessage = ex.Message };
         }
     }
 
@@ -275,7 +362,9 @@ public class SqlServerCall : IDisposable
     {
         if (database != null)
         {
+            _logger?.LogDebug("Changing database to {Database}", database);
             await _connection.ChangeDatabaseAsync(database);
+            _logger?.LogDebug("Database changed to {Database}", _connection.Database);
         }
     }
 
@@ -286,11 +375,22 @@ public class SqlServerCall : IDisposable
         using SqlCommand cmd = new()
         {
             CommandText = $"SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{tableName.ToUpper()}'",
-            Connection = _connection
+            Connection = _connection,
+            CommandTimeout = 30
         };
 
-        var ret = cmd.ExecuteScalar() ?? "0";
-        return int.Parse(ret.ToString()!) == Constants.MethodSuccess;
+        try
+        {
+            var ret = await cmd.ExecuteScalarAsync() ?? "0";
+            bool exists = int.Parse(ret.ToString()!) == Constants.MethodSuccess;
+            _logger?.LogDebug("Table existence check for {TableName}: {Exists}", tableName.ToUpper(), exists);
+            return exists;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Error checking if table {TableName} exists, assuming it doesn't", tableName.ToUpper());
+            return false;
+        }
     }
 
     public void Dispose()
@@ -301,7 +401,7 @@ public class SqlServerCall : IDisposable
 
     private void Dispose(bool disposing)
     {
-        if (!_disposed)
+        if (_disposed)
         {
             return;
         }
@@ -313,6 +413,20 @@ public class SqlServerCall : IDisposable
         }
 
         _disposed = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _connection.CloseAsync();
+        await _connection.DisposeAsync();
+        _disposed = true;
+
+        GC.SuppressFinalize(this);
     }
 
     ~SqlServerCall()

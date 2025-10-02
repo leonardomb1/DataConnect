@@ -5,17 +5,15 @@ namespace DataConnect.Features.Api;
 public class AuthenticationMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly IAuthenticationService _authService;
     private readonly IConfiguration _configuration;
 
-    public AuthenticationMiddleware(RequestDelegate next, IAuthenticationService authService, IConfiguration configuration)
+    public AuthenticationMiddleware(RequestDelegate next, IConfiguration configuration)
     {
         _next = next;
-        _authService = authService;
         _configuration = configuration;
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IAuthenticationService authService)
     {
         if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/health"))
         {
@@ -28,7 +26,7 @@ public class AuthenticationMiddleware
             }
 
             var token = context.Request.Headers["token"].FirstOrDefault();
-            if (string.IsNullOrEmpty(token) || !_authService.ValidateToken(token, authSecret))
+            if (string.IsNullOrEmpty(token) || !authService.ValidateToken(token, authSecret))
             {
                 context.Response.StatusCode = 401;
                 await context.Response.WriteAsync("Unauthorized");
